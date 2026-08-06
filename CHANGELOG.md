@@ -22,6 +22,8 @@ All notable changes to this project are documented in this file.
 - Add example space reset API and interactive tour node tag step (44626cf)
 - Exclude args and kwargs store variables during save extraction (8412de3)
 - Finish Vue frontend, add Route Targets, fix save-extraction crash (b7056f5)
+- Add Duplicate space button, inline config fields, jump to latest save, and auto-fit graph viewport (c223deb)
+- Watch additional saves directories (24febd6)
 
 ### Miscellaneous
 
