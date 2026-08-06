@@ -43,6 +43,9 @@ class _Stub:
         self.__dict__["_state"] = state
 
 
+_STDLIB_MODULES = {"__builtin__", "builtins", "collections"}
+
+
 class _TolerantUnpickler(pickle.Unpickler):
     """Unpickler that manufactures stand-in classes on demand."""
 
@@ -55,6 +58,16 @@ class _TolerantUnpickler(pickle.Unpickler):
         cached = self._classes.get(key)
         if cached is not None:
             return cached
+        if module in _STDLIB_MODULES:
+            # Real Python/stdlib types (dict, list, set, collections.defaultdict,
+            # ...) are already picklable as themselves. Routing them through the
+            # name-substring heuristic below (meant for Ren'Py's RevertableDict/
+            # List/Set) corrupts their real construction protocol -- e.g. a
+            # pickled `defaultdict(dict)` ends up calling the fake stand-in's
+            # inherited `dict.keys` descriptor unbound, with no arguments.
+            cls = super().find_class(module, name)
+            self._classes[key] = cls
+            return cls
         low = name.lower()
         if "list" in low:
             base: type = list

@@ -15,8 +15,21 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+where npm >nul 2>nul
+if %errorlevel% neq 0 (
+    echo [ERROR] Node.js / npm is not installed or not in PATH!
+    echo Please install Node.js 18+ from https://nodejs.org/
+    echo.
+    pause
+    exit /b 1
+)
+
 echo Installing / Updating renpy-save-graph...
 py -m pip install --quiet --upgrade .
+
+echo Installing / building the web UI...
+call npm install --silent
+call npm run build --silent
 
 echo.
 echo Starting web server on http://localhost:5555/

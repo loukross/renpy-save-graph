@@ -14,8 +14,9 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': 'http://localhost:5000',
-      '/assets': 'http://localhost:5000',
+      // Matches the renpy-save-graph CLI's default port (see README.md).
+      '/api': 'http://localhost:5555',
+      '/assets': 'http://localhost:5555',
     },
   },
 });

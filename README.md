@@ -12,29 +12,16 @@
 
 ### Requirements
 - **Python 3.11+**
+- **Node.js 18+** (needed once, to build the web UI — see below)
 - **Git**
 
 ### How to Run
 
-#### Option 1: Desktop Launcher Scripts
 Download or clone the repository and run the launcher script for your operating system:
 - **Windows**: Double-click `run.bat`
 - **macOS / Linux**: Run `./run.sh`
 
-The launcher script installs package dependencies and starts the local web server at `http://localhost:5555/`.
-
-#### Option 2: Package Manager (`pip` / `pipx`)
-Install and launch directly using Python package managers:
-
-```bash
-# Standard installation
-pip install renpy-save-graph
-renpy-save-graph
-
-# Isolated environment installation
-pipx install renpy-save-graph
-renpy-save-graph
-```
+The launcher script installs the Python package, builds the web UI (`npm install` + `npm run build`), and starts the local server at `http://localhost:5555/`.
 
 ---
 
@@ -91,7 +78,25 @@ cd renpy-save-graph
 uv sync --extra dev
 ```
 
-### 2. Running Test Suite
+### 2. Frontend Development (Vue + Vite)
+The web UI is a Vue 3 app built with Vite, living under `frontend/`. The server (`/` and `/assets`) serves the compiled output at `renpy_save_graph/static/` — that directory is build output, not source, so it's gitignored and not committed. Every clone or checkout needs a build before the server has anything to serve.
+
+```bash
+# Install frontend dependencies (run from the repo root — package.json lives there, not under frontend/)
+npm install
+
+# Build the web UI into renpy_save_graph/static/ (do this once after cloning,
+# and again any time frontend/ source changes)
+npm run build
+
+# Start the backend on its default port (5555)
+uv run renpy-save-graph
+# (or: python run.py)
+```
+
+For iterating on the UI with hot module reload instead of rebuilding on every change, run `npm run dev` in a second terminal (with the backend from above still running) and open `http://localhost:5173/` — Vite proxies `/api` and `/assets` through to port 5555.
+
+### 3. Running Test Suite
 ```bash
 # Run pytest integration suite
 uv run pytest -v
@@ -100,7 +105,7 @@ uv run pytest -v
 uv run pytest --cov=renpy_save_graph --cov-report=term-missing
 ```
 
-### 3. Git Hooks
+### 4. Git Hooks
 Tracked hook scripts live in `scripts/` (`pre-commit` runs the test suite; `commit-msg` enforces a [Conventional Commits](https://www.conventionalcommits.org/) prefix — `feat`, `fix`, `perf`, `docs`, `refactor`, `test`, or `chore` — since `CHANGELOG.md` is generated from it). They aren't installed automatically on clone:
 ```bash
 ln -sf ../../scripts/pre-commit .git/hooks/pre-commit

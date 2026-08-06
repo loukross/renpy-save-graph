@@ -11,7 +11,7 @@ from renpy_save_graph.server import create_app
 
 @pytest.fixture(scope="module")
 def ui_server_url(tmp_path_factory, free_tcp_port_factory):
-    """Fixture to launch a lightweight background server serving ui.html."""
+    """Fixture to launch a lightweight background server serving the built frontend."""
     tmp_path = tmp_path_factory.mktemp("ui_server_test")
     cfg_file = tmp_path / "config.json"
 

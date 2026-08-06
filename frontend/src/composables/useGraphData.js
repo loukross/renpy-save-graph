@@ -20,7 +20,8 @@ export function useGraphData() {
       const favs = spaceConfig?.favorite_vars || [];
       const mVars = spaceConfig?.milestone_vars || [];
       const needed = new Set([...favs, ...mVars]);
-      const rawStr = ((graphOrderByExpr || '') + ' ' + (filterExpr || '') + ' ' + (spaceConfig?.lineage_validity_expr || ''));
+      const routeTargetExprs = (spaceConfig?.route_targets || []).map(rt => rt.expr || '').join(' ');
+      const rawStr = ((graphOrderByExpr || '') + ' ' + (filterExpr || '') + ' ' + (spaceConfig?.lineage_validity_expr || '') + ' ' + routeTargetExprs);
       const exprMatches = rawStr.match(/[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
       const reserved = new Set(['chrono', 'jaccard', 'asc', 'desc', 'score', 'day', 'and', 'or', 'not', 'true', 'false', 'delta', 'changed', 'added']);
       exprMatches.forEach(v => {

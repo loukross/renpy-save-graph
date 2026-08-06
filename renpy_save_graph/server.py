@@ -6,10 +6,14 @@ import asyncio
 import base64
 import io
 import json
+import sys
+import uuid
+import shutil
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from dataclasses import asdict
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -24,8 +28,9 @@ from .library import Library, STATE
 from .thumbnail import stamp_png
 from .watcher import Director, SpaceConfig
 
-_HTML_PATH = Path(__file__).parent / "ui.html"
-_SPACE_PATCHABLE = {"label", "saves_dir", "node_hint_format", "slot_exclude", "lineage_validity_expr", "milestone_vars", "favorite_vars", "filter_history", "sort_history"}
+_HTML_PATH = Path(__file__).parent / "static" / "index.html"
+_ASSETS_DIR = Path(__file__).parent / "static" / "assets"
+_SPACE_PATCHABLE = {"label", "saves_dir", "node_hint_format", "slot_exclude", "lineage_validity_expr", "milestone_vars", "route_targets", "favorite_vars", "filter_history", "sort_history"}
 
 
 class _SortVal:
@@ -92,14 +97,7 @@ def create_app(config_path: Path) -> FastAPI:
     def index() -> Response:
         return HTMLResponse(content=html)
 
-    @app.get("/assets/{filename}")
-    def api_asset(filename: str):
-        from fastapi.responses import FileResponse
-        asset_path = Path(__file__).parent / "assets" / filename
-        if not asset_path.exists() or not asset_path.is_file():
-            raise HTTPException(404, f"asset {filename!r} not found")
-        media_type = "image/svg+xml" if filename.endswith(".svg") else "application/octet-stream"
-        return FileResponse(asset_path, media_type=media_type)
+    app.mount("/assets", StaticFiles(directory=_ASSETS_DIR), name="assets")
 
     # -- config --------------------------------------------------------------
 
@@ -146,6 +144,7 @@ def create_app(config_path: Path) -> FastAPI:
             slot_exclude=body.get("slot_exclude", ""),
             lineage_validity_expr=body.get("lineage_validity_expr", ""),
             milestone_vars=body.get("milestone_vars", []),
+            route_targets=body.get("route_targets", []),
         )
         cfg.spaces.append(space)
         save(cfg)
@@ -528,6 +527,9 @@ def create_app(config_path: Path) -> FastAPI:
                     except asyncio.CancelledError:
                         raise
                     except Exception as exc:
+                        import traceback
+                        print(f"[watch:{space_id}] unhandled error:", file=sys.stderr)
+                        traceback.print_exc()
                         yield {"data": json.dumps({"error": str(exc)})}
 
                     if shutdown_event.is_set():

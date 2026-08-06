@@ -28,6 +28,7 @@
 
     <details class="advanced" id="advanced-details">
       <summary>Advanced</summary>
+
       <div class="field">
         <label>Library path <span class="optional">(default: app data)</span></label>
         <template v-if="spaceForm.isNew">
@@ -85,6 +86,52 @@
           </div>
         </div>
       </div>
+
+      <div class="field" id="field-route-targets">
+        <div style="margin-bottom:6px">
+          <label style="margin-bottom:0">Route targets <span class="optional">(optional)</span></label>
+        </div>
+
+        <div style="display:flex;gap:6px;margin-bottom:4px;font-size:11px;font-weight:bold;color:var(--text-dim)">
+          <div style="flex:1">Name</div>
+          <div style="flex:1.5;display:flex;align-items:center;gap:4px">
+            <span>Rule Expression</span>
+            <button class="help-btn" @click.stop="$emit('toggle-help', 'lineage', $event)" title="Expression Help">?</button>
+          </div>
+          <div style="width:65px"></div>
+        </div>
+
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <input
+            v-model="newRouteName"
+            placeholder="e.g. Max Points"
+            style="font-size:12px;flex:1"
+          />
+          <input
+            v-model="newRouteExpr"
+            placeholder="e.g. delta('points') >= 0"
+            @keydown.enter.prevent="addRouteTarget"
+            style="font-family:monospace;font-size:12px;flex:1.5"
+          />
+          <button class="btn-secondary" @click.prevent="addRouteTarget" style="font-size:12px;width:65px;flex-shrink:0">+ Add</button>
+        </div>
+
+        <div v-if="spaceForm.route_targets && spaceForm.route_targets.length" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+          <div
+            v-for="(rt, idx) in spaceForm.route_targets"
+            :key="idx"
+            style="display:inline-flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:16px;padding:4px 12px;font-size:12px"
+          >
+            <strong style="color:var(--accent2)">{{ rt.name }}:</strong>
+            <code style="color:var(--text-dim);font-family:monospace">{{ rt.expr }}</code>
+            <button
+              @click.prevent="removeRouteTarget(idx)"
+              style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;font-weight:bold;padding:0;line-height:1"
+              title="Remove Route Target"
+            >×</button>
+          </div>
+        </div>
+      </div>
     </details>
 
     <div v-if="spaceForm.error" class="error">{{ spaceForm.error }}</div>
@@ -117,13 +164,15 @@
 </template>
 
 <script setup>
-defineProps({
+import { ref } from 'vue';
+
+const props = defineProps({
   spaceForm: Object,
   selectedSpaceId: String,
   defaultDataDir: String,
 });
 
-defineEmits([
+const emit = defineEmits([
   'open-picker',
   'toggle-help',
   'add-milestone-var',
@@ -133,4 +182,23 @@ defineEmits([
   'add-space',
   'save-space',
 ]);
+
+const newRouteName = ref('');
+const newRouteExpr = ref('');
+
+function addRouteTarget() {
+  const name = newRouteName.value.trim();
+  const expr = newRouteExpr.value.trim();
+  if (!name || !expr) return;
+  if (!props.spaceForm.route_targets) props.spaceForm.route_targets = [];
+  props.spaceForm.route_targets.push({ name, expr });
+  newRouteName.value = '';
+  newRouteExpr.value = '';
+}
+
+function removeRouteTarget(idx) {
+  if (props.spaceForm.route_targets) {
+    props.spaceForm.route_targets.splice(idx, 1);
+  }
+}
 </script>

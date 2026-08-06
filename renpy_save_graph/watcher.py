@@ -159,10 +159,22 @@ class Director:
         return IngestResult(slot_name=slot_name, commit=commit_info)
 
     def ingest_all(self, note: str | None = None) -> list[IngestResult]:
-        """Ingest all changed slots. Returns results only for slots that committed."""
+        """Ingest all changed slots. Returns results only for slots that committed.
+
+        A single slot's ingest failure (e.g. a save file caught mid-write, or a
+        one-off decode error) is logged and skipped rather than aborting the
+        whole pass — otherwise one bad slot would block every other slot in the
+        space from ever being watched again until its file changed.
+        """
         results = []
         for slot_name in self.slot_names():
-            result = self.ingest(slot_name, note=note)
+            try:
+                result = self.ingest(slot_name, note=note)
+            except Exception:
+                import traceback
+                print(f"[watcher] ingest failed for slot {slot_name!r}:", file=sys.stderr)
+                traceback.print_exc()
+                continue
             if result is not None:
                 results.append(result)
         return results

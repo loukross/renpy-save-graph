@@ -35,8 +35,10 @@ class GameSpace:
     favorite_vars: list[str] = field(default_factory=list)
     filter_history: list[str] = field(default_factory=list)
     sort_history: list[str] = field(default_factory=list)
+    additional_saves_dirs: list[str] = field(default_factory=list)
     lineage_validity_expr: str = ""
     milestone_vars: list[str] = field(default_factory=list)
+    route_targets: list[dict[str, str]] = field(default_factory=list)
 
 
 @dataclass

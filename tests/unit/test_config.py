@@ -49,3 +49,22 @@ def test_app_config_save_and_load(tmp_path: Path):
     assert len(loaded.spaces) == 1
     assert loaded.spaces[0].id == "s1"
     assert loaded.spaces[0].favorite_vars == ["karma"]
+
+
+@pytest.mark.unit
+def test_game_space_route_targets(tmp_path: Path):
+    cfg_file = tmp_path / "config.json"
+    space = GameSpace(
+        id="s2",
+        label="Space 2",
+        saves_dir=str(tmp_path / "saves"),
+        library_path=str(tmp_path / "lib"),
+        route_targets=[{"name": "Maya Route", "expr": "delta('maya') >= 0"}],
+    )
+    config = AppConfig(spaces=[space])
+    config.save(cfg_file)
+
+    loaded = AppConfig.load(cfg_file)
+    assert len(loaded.spaces) == 1
+    assert loaded.spaces[0].route_targets == [{"name": "Maya Route", "expr": "delta('maya') >= 0"}]
+
