@@ -1075,6 +1075,19 @@ async function startInteractiveTour(force = false) {
             const details = document.getElementById('advanced-details');
             if (details) details.open = true;
           },
+        },
+      },
+      {
+        element: '#field-route-targets',
+        popover: {
+          title: 'Route Targets',
+          description: 'Optional named rules (same expression language as the Lineage Validity check), e.g. <code>delta(\'goodChoices\') >= 0</code>, describing a route worth tracking. On the graph view, select one or more targets to see exactly where a branch first fell off that route — everything downstream of that point is hidden by default.',
+          side: 'left',
+          align: 'start',
+          onHighlightStarted: () => {
+            const details = document.getElementById('advanced-details');
+            if (details) details.open = true;
+          },
           onNextClick: async () => {
             if (selectedSpaceId.value) {
               await openGraph(selectedSpaceId.value);

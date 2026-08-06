@@ -21,11 +21,19 @@
       <button @click="$emit('close')" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;font-weight:bold">✕ Close</button>
     </div>
 
-    <div v-if="type === 'filter' || type === 'lineage'" style="font-size:12px;color:var(--text);line-height:1.5;display:flex;flex-direction:column;gap:8px">
+    <div v-if="type === 'filter' || type === 'lineage' || type === 'route-target'" style="font-size:12px;color:var(--text);line-height:1.5;display:flex;flex-direction:column;gap:8px">
       <div v-if="type === 'lineage'">
         Evaluated against each node's diff from its parent. When the
         expression evaluates <strong>false</strong>, the node's lineage is
         marked invalid.
+      </div>
+      <div v-else-if="type === 'route-target'">
+        Evaluated against each node's diff from its parent, same as Lineage
+        Validity. The first node along a branch where the expression
+        evaluates <strong>false</strong> is that route's divergence point —
+        it's marked "Suboptimal for &lt;name&gt;", and everything downstream
+        of it is hidden from the graph by default (toggle "Hide off-track
+        subtrees" to show it anyway).
       </div>
       <div><strong>Functions:</strong>
         <ul style="margin:4px 0 0 16px;padding:0">
@@ -38,7 +46,10 @@
       <div><strong>Comparisons & Logic:</strong>
         <div style="margin-top:2px"><code>&gt;</code>, <code>&lt;</code>, <code>&gt;=</code>, <code>&lt;=</code>, <code>==</code>, <code>!=</code>, <code>&amp;&amp;</code> (AND), <code>||</code> (OR), <code>!</code> (NOT)</div>
       </div>
-      <div style="background:var(--bg3);padding:6px;border-radius:4px;font-family:monospace;font-size:11px">
+      <div v-if="type === 'lineage'" style="background:var(--bg3);padding:6px;border-radius:4px;font-family:monospace;font-size:11px">
+        delta('goodChoices') &gt;= 0 &amp;&amp; delta('chapter') &gt;= 0 &amp;&amp; ...
+      </div>
+      <div v-else style="background:var(--bg3);padding:6px;border-radius:4px;font-family:monospace;font-size:11px">
         karma &gt;= 10 &amp;&amp; delta('money') &gt; 0
       </div>
     </div>
@@ -84,6 +95,7 @@ defineEmits(['close']);
 const titles = {
   filter: '🔍 Graph Filter Expressions',
   lineage: '⚠ Lineage Validity Check Expression',
+  'route-target': '🎯 Route Target Rule Expression',
   regex: '🔍 Regex Filter Basics',
   milestone: 'Milestone Progress Variable Rules',
 };

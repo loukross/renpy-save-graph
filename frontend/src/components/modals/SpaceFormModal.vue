@@ -96,7 +96,7 @@
           <div style="flex:1">Name</div>
           <div style="flex:1.5;display:flex;align-items:center;gap:4px">
             <span>Rule Expression</span>
-            <button class="help-btn" @click.stop="$emit('toggle-help', 'lineage', $event)" title="Expression Help">?</button>
+            <button class="help-btn" @click.stop="$emit('toggle-help', 'route-target', $event)" title="Expression Help">?</button>
           </div>
           <div style="width:65px"></div>
         </div>
