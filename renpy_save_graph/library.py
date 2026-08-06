@@ -35,17 +35,8 @@ _REC = "\x1e"  # record separator (between commits)
 # Branch identifiers that are never shown as user-visible names.
 _UNNAMED_BRANCHES = {"master", "main", "_root", "(detached)", ""}
 
-_DAG_CACHE: dict[str, tuple[str, list[NodeInfo]]] = {}
-
-
 def clear_dag_cache(lib_path: str | Path | None = None) -> None:
-    if lib_path is None:
-        _DAG_CACHE.clear()
-    else:
-        p_str = str(lib_path)
-        keys_to_del = [k for k in _DAG_CACHE if k.startswith(p_str)]
-        for k in keys_to_del:
-            _DAG_CACHE.pop(k, None)
+    pass
 
 
 class GitError(RuntimeError):
@@ -232,26 +223,10 @@ class Library:
             return []
 
     def dag_for_slot(self, slot_branch: str, all_slot_branches: list[str]) -> list[NodeInfo]:
-        """Commits for this slot and all its fork branches with fast rev-parse cache validation."""
-        try:
-            head_sha = self._git("rev-parse", f"refs/heads/{slot_branch}", capture=True)
-        except GitError:
-            try:
-                head_sha = self._git("rev-parse", "HEAD", capture=True)
-            except GitError:
-                head_sha = ""
-
-        cache_key = f"{self.path}:{slot_branch}"
-        cached = _DAG_CACHE.get(cache_key)
-        if cached and cached[0] == head_sha and head_sha != "":
-            return cached[1]
-
+        """Commits for this slot and all its fork branches."""
         root = self._root_sha()
         forks = self.fork_branches_of(slot_branch, all_slot_branches)
-        nodes = self._dag(slot_branch, *forks, f"^{root}", exclude_parent=root)
-        if head_sha:
-            _DAG_CACHE[cache_key] = (head_sha, nodes)
-        return nodes
+        return self._dag(slot_branch, *forks, f"^{root}", exclude_parent=root)
 
     def _dag(self, *rev_args: str, exclude_parent: str = "") -> list[NodeInfo]:
         try:
