@@ -9,6 +9,7 @@ All notable changes to this project are documented in this file.
 - Remove redundant _DAG_CACHE memory layer (09b3bbf)
 - Prevent branch overwriting on restore and log all slot fork branches (7f541d5)
 - Use a PAT for the changelog PR to avoid required workflow approval (fd0cf11)
+- Build frontend before running tests; add Route Targets help & tour step (c729d56)
 
 ### Documentation
 
@@ -20,6 +21,7 @@ All notable changes to this project are documented in this file.
 - Stack multi-item milestone guideline labels vertically (2108684)
 - Add example space reset API and interactive tour node tag step (44626cf)
 - Exclude args and kwargs store variables during save extraction (8412de3)
+- Finish Vue frontend, add Route Targets, fix save-extraction crash (b7056f5)
 
 ### Miscellaneous
 
