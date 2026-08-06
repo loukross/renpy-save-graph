@@ -24,7 +24,9 @@
       >
         <div style="display:flex;flex-direction:column;gap:6px">
           <button class="btn-secondary" style="justify-content:flex-start;font-size:13px;padding:6px 10px" @click="onJumpHead">📍 Current Head (Active Save)</button>
-          <button class="btn-secondary" style="justify-content:flex-start;font-size:13px;padding:6px 10px" @click="onJumpRoot">🌱 Root (Beginning)</button>
+          <button class="btn-secondary" style="justify-content:flex-start;font-size:13px;padding:6px 10px" @click="onJumpRoot">🌱 Root</button>
+          <button class="btn-secondary" style="justify-content:flex-start;font-size:13px;padding:6px 10px" @click="onJumpLatest">⏰ Most Recent</button>
+          <button class="btn-secondary" style="justify-content:flex-start;font-size:13px;padding:6px 10px" @click="onFitView">🌐 Entire Graph</button>
           <div style="border-top:1px solid var(--border);margin:4px 0"></div>
           <label style="font-size:13px;font-weight:600;color:var(--text-dim)">📅 Jump to Date Range</label>
           <div style="display:flex;gap:4px">
@@ -58,8 +60,10 @@ const emit = defineEmits([
   'update:selectedSlot',
   'refresh',
   'ingest',
+  'fit-screen',
   'jump-head',
   'jump-root',
+  'jump-latest',
   'jump-range',
 ]);
 
@@ -77,6 +81,11 @@ function onDocumentClick(e) {
 onMounted(() => document.addEventListener('click', onDocumentClick));
 onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick));
 
+function onFitView() {
+  jumpMenuOpen.value = false;
+  emit('fit-screen');
+}
+
 function onJumpHead() {
   jumpMenuOpen.value = false;
   emit('jump-head');
@@ -85,6 +94,11 @@ function onJumpHead() {
 function onJumpRoot() {
   jumpMenuOpen.value = false;
   emit('jump-root');
+}
+
+function onJumpLatest() {
+  jumpMenuOpen.value = false;
+  emit('jump-latest');
 }
 
 function onDatePreset(preset) {

@@ -27,6 +27,7 @@
             <select v-model="selectedSpaceId" @change="onSpaceSelected">
               <option v-for="s in spaces" :key="s.id" :value="s.id">{{ s.label || s.id }}</option>
             </select>
+            <button v-if="selectedSpaceId" class="btn-duplicate" @click="duplicateSpace">Duplicate</button>
             <button class="btn-secondary" @click="startNewSpace">New…</button>
           </div>
 
@@ -56,14 +57,17 @@
         :watching="!!watcher"
         @refresh="reloadGraph"
         @ingest="ingest"
+        @fit-screen="onFitScreen"
         @jump-head="jumpHead"
         @jump-root="jumpRoot"
+        @jump-latest="jumpLatest"
         @jump-range="onJumpRange"
       />
 
       <div id="graph-main">
         <div id="graph-pane">
           <GraphCanvas
+            :key="selectedSpaceId + '-' + selectedSlot"
             ref="graphCanvasRef"
             :graph-data="graphData"
             :node-states="nodeStates"
@@ -456,6 +460,26 @@ function startNewSpace() {
   };
 }
 
+function duplicateSpace() {
+  const current = currentSpace.value;
+  if (!current) return;
+  selectedSpaceId.value = '';
+  spaceForm.value = {
+    isNew: true,
+    label: '',
+    saves_dir: '',
+    library_path: '',
+    node_hint_format: current.node_hint_format || '',
+    slot_exclude: current.slot_exclude || '',
+    lineage_validity_expr: current.lineage_validity_expr || '',
+    milestone_vars: JSON.parse(JSON.stringify(current.milestone_vars || [])),
+    route_targets: JSON.parse(JSON.stringify(current.route_targets || [])),
+    newMilestoneInput: '',
+    saving: false,
+    error: '',
+  };
+}
+
 async function addSpace() {
   if (!spaceForm.value.saves_dir) return;
   spaceForm.value.saving = true;
@@ -544,7 +568,7 @@ async function loadSlots() {
     if (!resp.ok) return;
     const data = await resp.json();
     availableSlots.value = data.slots || [];
-    if (availableSlots.value.length && !selectedSlot.value) {
+    if (availableSlots.value.length && (!selectedSlot.value || !availableSlots.value.includes(selectedSlot.value))) {
       selectedSlot.value = availableSlots.value[0];
     }
   } catch (e) {
@@ -812,6 +836,14 @@ function jumpRoot() {
   graphCanvasRef.value && graphCanvasRef.value.jumpToRoot();
 }
 
+function jumpLatest() {
+  graphCanvasRef.value && graphCanvasRef.value.jumpToLatest();
+}
+
+function onFitScreen() {
+  graphCanvasRef.value && graphCanvasRef.value.fitGraphToScreen();
+}
+
 function onJumpRange({ from, to }) {
   if (!graphCanvasRef.value) return;
   let fromTs = 0, toTs = Infinity;
@@ -1044,11 +1076,6 @@ async function startInteractiveTour(force = false) {
           description: 'Hides matching slot names, like autosaves, from the slot picker.',
           side: 'bottom',
           align: 'start',
-          onNextClick: () => {
-            const details = document.getElementById('advanced-details');
-            if (details) details.open = true;
-            driverObj.moveNext();
-          },
         },
       },
       {
@@ -1058,10 +1085,6 @@ async function startInteractiveTour(force = false) {
           description: 'An optional expression (same language as the Graph Filter) describing what a valid save looks like, e.g. delta(\'karma\') >= 0. Any node where it evaluates false gets flagged with a red border — useful for catching an accidental save of past state over future state.',
           side: 'left',
           align: 'start',
-          onHighlightStarted: () => {
-            const details = document.getElementById('advanced-details');
-            if (details) details.open = true;
-          },
         },
       },
       {
@@ -1071,10 +1094,6 @@ async function startInteractiveTour(force = false) {
           description: 'Configure story progress variables (such as <code>currentEpisode</code> or <code>chapter</code>) that increase monotonically. Save points advancing to new milestone values across separate subtrees align along vertical milestone columns in the graph view.',
           side: 'left',
           align: 'start',
-          onHighlightStarted: () => {
-            const details = document.getElementById('advanced-details');
-            if (details) details.open = true;
-          },
         },
       },
       {
@@ -1084,13 +1103,11 @@ async function startInteractiveTour(force = false) {
           description: 'Optional named rules (same expression language as the Lineage Validity check), e.g. <code>delta(\'goodChoices\') >= 0</code>, describing a route worth tracking. On the graph view, select one or more targets to see exactly where a branch first fell off that route — everything downstream of that point is hidden by default.',
           side: 'left',
           align: 'start',
-          onHighlightStarted: () => {
-            const details = document.getElementById('advanced-details');
-            if (details) details.open = true;
-          },
           onNextClick: async () => {
-            if (selectedSpaceId.value) {
-              await openGraph(selectedSpaceId.value);
+            const targetSpaceId = selectedSpaceId.value || spaces.value.find(s => s.id === 'example-space')?.id || spaces.value[0]?.id;
+            if (targetSpaceId) {
+              await openGraph(targetSpaceId);
+              await nextTick();
             }
             driverObj.moveNext();
           },

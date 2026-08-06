@@ -5,6 +5,8 @@ echo "==================================================="
 echo "  Running Pre-Commit Automated Test Suite..."
 echo "==================================================="
 
+unset GIT_INDEX_FILE GIT_DIR GIT_WORK_TREE
+
 if command -v uv &> /dev/null; then
     uv run pytest -v -m "not playwright"
 else

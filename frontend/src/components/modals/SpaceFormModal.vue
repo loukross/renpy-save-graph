@@ -26,9 +26,6 @@
       <input v-model="spaceForm.slot_exclude" placeholder="autosave" style="font-family:monospace" />
     </div>
 
-    <details class="advanced" id="advanced-details">
-      <summary>Advanced</summary>
-
       <div class="field">
         <label>Library path <span class="optional">(default: app data)</span></label>
         <template v-if="spaceForm.isNew">
@@ -132,7 +129,6 @@
           </div>
         </div>
       </div>
-    </details>
 
     <div v-if="spaceForm.error" class="error">{{ spaceForm.error }}</div>
 

@@ -20,7 +20,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, onUnmounted, watch } from 'vue';
 import * as d3 from 'd3';
 import jsep from 'jsep';
 
@@ -69,13 +69,37 @@ let containerGroup = null;
 let savedZoom = null;
 let nodePosMap = new Map();
 let layoutMeta = { nodeW: 326, nodeH: 222 };
+let resizeObserver = null;
 
 onMounted(() => {
   setupD3Svg();
   if (props.graphData && props.graphData.nodes) {
     renderGraph();
   }
+  if (canvasContainer.value && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(() => {
+      const sw = canvasContainer.value?.clientWidth || 0;
+      const sh = canvasContainer.value?.clientHeight || 0;
+      if (sw > 0 && sh > 0) {
+        fitGraphToScreen();
+      }
+    });
+    resizeObserver.observe(canvasContainer.value);
+  }
 });
+
+onUnmounted(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+  }
+});
+
+watch(
+  () => [props.spaceId, props.slotName, props.graphData],
+  () => {
+    savedZoom = null;
+  }
+);
 
 watch(
   () => [
@@ -656,18 +680,11 @@ function renderGraph() {
   svgSelection.call(zoom);
 
   if (!savedZoom) {
-    const svgEl = svgRef.value;
-    const sw = svgEl.clientWidth || 800, sh = svgEl.clientHeight || 600;
-    const margin = 60;
-    const totalW = Math.max(1, (maxX - minX) + nodeW);
-    const totalH = Math.max(1, (maxY - minY) + nodeH);
-    const scale = Math.max(0.01, Math.min(1, Math.min((sw - margin * 2) / totalW, (sh - margin * 2) / totalH)));
-    savedZoom = d3.zoomIdentity
-      .translate(sw / 2 - (totalW / 2) * scale, sh / 2 - (totalH / 2) * scale)
-      .scale(scale);
+    fitGraphToScreen();
+  } else {
+    svgSelection.call(zoom.transform, savedZoom);
+    updateMilestoneGuidesViewport();
   }
-  svgSelection.call(zoom.transform, savedZoom);
-  updateMilestoneGuidesViewport();
 }
 
 // -- node decoration (ported from ui.html's _decorateNode) ------------------
@@ -865,6 +882,12 @@ function jumpToRoot() {
   if (rootNode) centerGraphOnNode(rootNode.sha);
 }
 
+function jumpToLatest() {
+  if (!props.graphData || !props.graphData.nodes || !props.graphData.nodes.length) return;
+  const latestNode = [...props.graphData.nodes].sort((a, b) => b.when - a.when)[0];
+  if (latestNode) centerGraphOnNode(latestNode.sha);
+}
+
 function jumpToDateRange(fromTs, toTs) {
   if (!props.graphData || !props.graphData.nodes) return 0;
   const matching = props.graphData.nodes.filter(n => n.when >= fromTs && n.when <= toTs);
@@ -872,7 +895,37 @@ function jumpToDateRange(fromTs, toTs) {
   return matching.length;
 }
 
-defineExpose({ jumpToHead, jumpToRoot, jumpToDateRange, centerGraphOnNode });
+function fitGraphToScreen() {
+  if (!svgRef.value || !zoomBehavior || !containerGroup) return;
+  const svgEl = svgRef.value;
+  const sw = svgEl.clientWidth || canvasContainer.value?.clientWidth || 800;
+  const sh = svgEl.clientHeight || canvasContainer.value?.clientHeight || 600;
+  if (sw <= 0 || sh <= 0) return;
+
+  const containerNode = containerGroup.node();
+  if (!containerNode) return;
+  const bbox = containerNode.getBBox();
+  if (!bbox || bbox.width <= 0 || bbox.height <= 0) return;
+
+  const margin = 80;
+  const totalW = bbox.width;
+  const totalH = bbox.height;
+  const centerX = bbox.x + totalW / 2;
+  const centerY = bbox.y + totalH / 2;
+
+  const scale = Math.max(0.01, Math.min((sw - margin * 2) / totalW, (sh - margin * 2) / totalH));
+  const tx = sw / 2 - centerX * scale;
+  const ty = sh / 2 - centerY * scale;
+
+  const transform = d3.zoomIdentity.translate(tx, ty).scale(scale);
+  savedZoom = transform;
+  if (svgSelection && zoomBehavior) {
+    svgSelection.call(zoomBehavior.transform, transform);
+  }
+  updateMilestoneGuidesViewport();
+}
+
+defineExpose({ jumpToHead, jumpToRoot, jumpToLatest, jumpToDateRange, centerGraphOnNode, fitGraphToScreen });
 </script>
 
 <style scoped>

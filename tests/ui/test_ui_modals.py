@@ -79,4 +79,17 @@ def test_ui_space_form_and_delete_modals(page, ui_server_url):
     # Fill form fields
     page.fill("#field-saves-dir input", "/test/saves")
 
+    # Select space again so Duplicate button appears
+    page.select_option(".space-picker-row select", "mock-space")
+    page.wait_for_selector("button:has-text('Duplicate')")
+
+    # Click Duplicate button
+    page.click("button:has-text('Duplicate')")
+    page.wait_for_selector("text=New space")
+
+    # Verify label, saves_dir, and library_path are empty
+    assert page.input_value(".spaces-inner input[placeholder='My game']") == ""
+    assert page.input_value("#field-saves-dir input") == ""
+
     assert page_errors == [], f"unexpected page errors: {page_errors}"
+
