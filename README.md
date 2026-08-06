@@ -38,13 +38,28 @@ renpy-save-graph
 
 ---
 
-## ✨ Features
+## 🎮 Usage & How It Works
 
-- **Interactive Route Flowchart**: View your entire game playthrough history as a branching flowchart, showing choices, save points, active heads, and save thumbnails.
-- **Variable Diffing & Inspection**: Compare any two save points to see exactly which stats, flags, or choices changed, or inspect all variables at a single save point.
-- **Save Point Search & Expression Filtering**: Filter the flowchart by custom conditions (e.g. `money > 0`, `karma == 5`) or search specific variables using regex.
-- **One-Click Route Restores**: Instantly restore any previous save point back into your game slot to jump to different choice paths.
-- **Safe Branching & Deletion**: Reparent or clean up unwanted save points without breaking your playthrough routes.
+**Ren'Py Save Graph** introduces a streamlined way to play choice-heavy Ren'Py visual novels. Instead of juggling dozens of manual save slots or losing track of decision points, you operate using a **single dedicated save slot** while the app manages your full story flowchart in the background.
+
+### 1. The Single Dedicated Slot Workflow
+- The app runs in parallel with the Ren'Py game.
+- Create and select a _Gamespace_ targeting one game installation's saves folder, which is `game/saves/` from the game's root (.exe-containing) folder.
+- Select one designated save slot in-game (e.g. Page 1, Slot 1: `1-1-LT1`), or more if you feel like managing multiple story trees.
+- Every time you save to this dedicated slot in Ren'Py, the app automatically detects the save point, extracts your choice state & screenshot, and records it as a node on your story flowchart.
+- This means the standard Quicksave/Quickload is not really of any use as far as this app is concerned. The way that a quick save appends saves to the Q.Save page (looping back to the first slot when full) doesn't accommodate this unique single-slot system. I invite users of the app to think about how the app could support quicksave in an intuitive and reliable manner.
+
+### 2. Branching & Story Exploration
+- For 100% completionists wanting to track every choice, start your game session with the app running to build a clean lineage of all decision points. Find a frequency of saving that works for you and the game you're playing - you don't have to save at every decision point.
+- To test a different decision or story path, select any previous save point on your flowchart and click **`Restore to Game`**.
+- The app swaps that save point into your single managed slot. Return to the game, load that slot, and make your new choice.
+- Saving in-game after restoring an older point automatically creates a new branch on your flowchart, preserving your original route.
+
+### 3. What This App Does (and Does NOT Do)
+- ✅ **What It Does**: Watches your game's saves folder, tracks an annotated lineage of your choice history, and lets you seamlessly swap save points in and out.
+- ❌ **What It Does NOT Do**:
+  - Does **not** modify or edit save file contents or game stats
+  - Does **not** patch or modify game files or runtime code - I aim to respect intentions of game authors and honor game licenses
 
 ---
 
