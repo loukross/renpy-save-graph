@@ -48,7 +48,7 @@ renpy-save-graph
 ### 1. The Single Dedicated Slot Workflow
 - The app runs in parallel with the Ren'Py game.
 - Create and select a _Gamespace_ targeting one game installation's saves folder, which is `game/saves/` from the game's root (.exe-containing) folder.
-- Select one designated save slot in-game (e.g. Page 1, Slot 1: `1-1-LT1`), or more if you feel like managing multiple story trees.
+- Select one designated save slot in-game (e.g. Page 1, Slot 1: `1-1-LT1`), or more if you feel like managing multiple story trees. You can start a save graph at any point in the game.
 - Every time you save to this dedicated slot in Ren'Py, the app automatically detects the save point, extracts your choice state & screenshot, and records it as a node on your story flowchart.
 - This means the standard Quicksave/Quickload is not really of any use as far as this app is concerned. The way that a quick save appends saves to the Q.Save page (looping back to the first slot when full) doesn't accommodate this unique single-slot system. I invite users of the app to think about how the app could support quicksave in an intuitive and reliable manner.
 
@@ -63,6 +63,7 @@ renpy-save-graph
 - ❌ **What It Does NOT Do**:
   - Does **not** modify or edit save file contents or game stats
   - Does **not** patch or modify game files or runtime code - I aim to respect intentions of game authors and honor game licenses
+  - Does not "insist upon itself" by becoming a necessary adjunct to playing a game, but can be used when desired
 
 ---
 
