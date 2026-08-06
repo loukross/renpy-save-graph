@@ -36,4 +36,8 @@ All notable changes to this project are documented in this file.
 - Replace monotonic_vars with a lineage validity check expression (793637c)
 - Merge branch 'main' of github.com:lucjross/renpy-save-graph (16d97e4)
 
+### Refactor
+
+- Extract monolithic ui.html into Vue 3 Single File Components with Vite build (116272e)
+
 
