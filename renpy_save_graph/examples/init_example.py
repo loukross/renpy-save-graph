@@ -52,19 +52,32 @@ def ensure_example_space(config_path: Path) -> None:
             res_a = director.ingest(slot_name, note='Narrator: "You stand at the ancient crossroads..."')
             sha_a = res_a.commit.sha
 
-            # 2. Ingest B (Forest) on fork branch forest_route
+            sha_b = None
+            # 2. Ingest B (Forest) on fork branch 1-1-LT1-forest_route
             save_b = pkg_examples_dir / "save_b.save"
             if save_b.exists():
-                director.library.branch_from(sha_a, "forest_route")
+                director.library.branch_from(sha_a, f"{slot_name}-forest_route")
                 slot_file.write_bytes(save_b.read_bytes())
-                director.library.commit_savepoint(slot_file, note='Narrator: "You chose the misty forest path..."')
+                commit_b = director.library.commit_savepoint(slot_file, note='Narrator: "You chose the misty forest path..."')
+                sha_b = commit_b.sha
 
+            sha_c = None
             # 3. Ingest C (Castle) on main slot branch (1-1-LT1)
             save_c = pkg_examples_dir / "save_c.save"
             if save_c.exists():
                 director.library.switch_branch(slot_name)
                 slot_file.write_bytes(save_c.read_bytes())
-                director.ingest(slot_name, note='Narrator: "You chose the mountain castle gate..."')
+                res_c = director.ingest(slot_name, note='Narrator: "You chose the mountain castle gate..."')
+                sha_c = res_c.commit.sha
+
+            from ..db import DatabaseStore
+            db = DatabaseStore(lib_dir / "graph.sqlite")
+            db.sync_with_git(director.library, slot_name, director.slot_names())
+            if sha_b:
+                db.add_tag(sha_b, "forest-route")
+                db.add_tag(sha_b, "ch1-milestone")
+            if sha_c:
+                db.add_tag(sha_c, "mountain-gate")
 
         cfg.spaces.append(space)
         cfg.save(config_path)

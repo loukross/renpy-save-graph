@@ -2973,11 +2973,19 @@ const app = createApp({
         return;
       }
 
+      // Reset Example Game Space cleanly anytime tour starts
+      try {
+        await fetch('/api/examples/reset', { method: 'POST' });
+        await this.loadConfig();
+      } catch (e) {
+        console.error('Error resetting example space:', e);
+      }
+
       this.view = 'spaces';
       const exSpace = this.spaces.find(s => s.id === 'example-space') || this.spaces[0];
       if (exSpace) {
         this.selectedSpaceId = exSpace.id;
-        this.onSpaceSelected();
+        await this.onSpaceSelected();
       }
 
       const self = this;
@@ -3148,7 +3156,24 @@ const app = createApp({
               title: 'Sort & Filter',
               description: 'Filter nodes using JSEP expressions like \"gold >= 100\", or re-order branches chronologically or by choice differences.',
               side: 'top',
+              align: 'start'
+            }
+          },
+          {
+            element: '.node-tag-manager',
+            popover: {
+              title: 'Custom Node Tags 🏷️',
+              description: 'Click <b>+tag</b> on any node card to attach custom labels (e.g. <code>boss-fight</code> or <code>ending-a</code>). You can then align your flowchart horizontally by tag using the 📐 Horizontal Alignment popover!',
+              side: 'right',
               align: 'start',
+              onHighlightStarted: async () => {
+                if (self.graphData && self.graphData.nodes) {
+                  const nodeB = self.graphData.nodes.find(n => n.subject && (n.subject.includes('forest') || n.subject.includes('Misty')));
+                  if (nodeB) {
+                    self.centerGraphOnNode(nodeB.sha);
+                  }
+                }
+              },
               onNextClick: async () => {
                 if (self.graphData && self.graphData.nodes) {
                   const nodeA = self.graphData.nodes.find(n => n.parents && n.parents.length === 0);

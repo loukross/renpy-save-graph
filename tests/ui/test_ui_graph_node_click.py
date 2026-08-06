@@ -92,6 +92,7 @@ def test_ui_graph_node_click_selects_node(page, ui_server_url):
         lambda route: route.fulfill(status=200, json={"changes": []}),
     )
 
+    page.add_init_script("localStorage.setItem('renpy_save_graph_tour_seen', 'true')")
     page.goto(ui_server_url)
     page.wait_for_selector("#app")
 

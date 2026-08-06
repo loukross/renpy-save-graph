@@ -483,6 +483,23 @@ def create_app(config_path: Path) -> FastAPI:
         db.remove_tag(sha, tag)
         return {"ok": True}
 
+    @app.post("/api/examples/reset")
+    def api_reset_example_space() -> dict[str, bool]:
+        import shutil
+        from .examples.init_example import EXAMPLE_SPACE_ID, ensure_example_space
+        from .config import AppConfig, default_config_path, default_data_dir
+
+        config_path = default_config_path()
+        cfg = AppConfig.load(config_path)
+        data_dir = default_data_dir()
+        demo_dir = data_dir / "demo_space"
+        if demo_dir.exists():
+            shutil.rmtree(demo_dir, ignore_errors=True)
+        cfg.spaces = [s for s in cfg.spaces if s.id != EXAMPLE_SPACE_ID]
+        cfg.save(config_path)
+        ensure_example_space(config_path)
+        return {"ok": True}
+
     # -- file watcher (SSE) --------------------------------------------------
 
     @app.get("/api/spaces/{space_id}/watch")
