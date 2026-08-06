@@ -21,10 +21,10 @@ from .config import AppConfig, GameSpace, default_config_path, default_library_p
 from .db import DatabaseStore
 from .library import Library, STATE
 from .thumbnail import stamp_png
-from .watcher import DEFAULT_MONOTONIC_VARS, Director, SpaceConfig
+from .watcher import Director, SpaceConfig
 
 _HTML_PATH = Path(__file__).parent / "ui.html"
-_SPACE_PATCHABLE = {"label", "saves_dir", "node_hint_format", "slot_exclude", "monotonic_vars", "favorite_vars", "filter_history", "sort_history"}
+_SPACE_PATCHABLE = {"label", "saves_dir", "node_hint_format", "slot_exclude", "lineage_validity_expr", "favorite_vars", "filter_history", "sort_history"}
 
 
 class _SortVal:
@@ -80,7 +80,6 @@ def create_app(config_path: Path) -> FastAPI:
         return Director(SpaceConfig(
             saves_dir=Path(space.saves_dir),
             library_path=Path(space.library_path),
-            monotonic_vars=space.monotonic_vars,
             slot_exclude=space.slot_exclude,
         ))
 
@@ -144,7 +143,6 @@ def create_app(config_path: Path) -> FastAPI:
             label=body.get("label", ""),
             saves_dir=body["saves_dir"],
             library_path=body.get("library_path") or str(default_library_path(space_id)),
-            monotonic_vars=body.get("monotonic_vars", list(DEFAULT_MONOTONIC_VARS)),
             node_hint_format=body.get("node_hint_format", ""),
             slot_exclude=body.get("slot_exclude", ""),
         )
@@ -402,8 +400,6 @@ def create_app(config_path: Path) -> FastAPI:
             "sha": result.commit.sha,
             "short": result.commit.short,
             "subject": result.commit.subject,
-            "anomaly": not result.anomaly.ok,
-            "violations": result.anomaly.violations,
         }
 
     @app.post("/api/spaces/{space_id}/slots/{slot_name}/restore")
@@ -481,8 +477,6 @@ def create_app(config_path: Path) -> FastAPI:
                                     "sha": result.commit.sha,
                                     "short": result.commit.short,
                                     "subject": result.commit.subject,
-                                    "anomaly": not result.anomaly.ok,
-                                    "violations": result.anomaly.violations,
                                 })
                             }
                     except asyncio.CancelledError:

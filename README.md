@@ -67,6 +67,12 @@ renpy-save-graph
 
 ---
 
+## ✨ Feature Notes
+
+- **Lineage Validity Checks**: Give a Gamespace an optional expression (like the Graph Filter Expression, e.g. `delta('karma') >= 0`) qualifying a save as valid and/or what a valid difference is between a save and its preceding save. Any node where it evaluates false gets flagged an "Invalid lineage detected" label. This helps to catch accidental saves of "past state" over "future state" (from backtracking in-game or from other save slots). What makes a good check will vary by game title.
+
+---
+
 ## 🧪 Developer Setup
 
 ### 1. Environment Setup

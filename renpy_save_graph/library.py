@@ -146,13 +146,8 @@ class Library:
         self,
         save_path: str | Path,
         note: str | None = None,
-        body_extra: str | None = None,
     ) -> CommitInfo:
-        """Copy a `.save` into the library, decode it, and commit on the current branch.
-
-        ``body_extra``, if given, is appended as a separate commit-message paragraph
-        (used by the director to record suspect-invariant details).
-        """
+        """Copy a `.save` into the library, decode it, and commit on the current branch."""
         state = extractor.extract(str(save_path))
         raw_bytes = Path(save_path).read_bytes()
         opt_bytes = optimize_save_thumbnail(raw_bytes)
@@ -167,8 +162,6 @@ class Library:
         fallback = datetime.now().strftime("%Y-%m-%d %H:%M")
         subject = (note or state.save_name or fallback).splitlines()[0][:72]
         args = ["commit", "-q", "-m", subject, "-m", f"node: {location}"]
-        if body_extra:
-            args += ["-m", body_extra]
         self._git("add", BLOB, STATE)
         self._git(*args)
         clear_dag_cache(self.path)

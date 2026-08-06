@@ -233,10 +233,8 @@ svg#graph   { width: 100%; height: 100%; background: var(--bg); }
 svg#graph image { image-rendering: high-quality; image-rendering: -webkit-optimize-contrast; }
 
 /* dagre node styles */
-.node rect { fill: var(--bg3); stroke: #2a3060; stroke-width: 2; }
-.node.head    rect { stroke: var(--gold); stroke-width: 2.5; }
-.node.suspect rect { stroke: var(--red);  stroke-width: 2.5; }
-.node.selected rect { stroke: #50a0ff; stroke-width: 3; }
+.node .node-bg { fill: var(--bg3); stroke: #2a3060; stroke-width: 2; }
+.node.selected .node-bg { stroke: #50a0ff; stroke-width: 3; }
 .edgePath path { stroke: #2a3a6a; stroke-width: 1.5; fill: none; }
 
 /* ---- resizer ---- */
@@ -452,7 +450,7 @@ table.diff-table td.new { color: var(--green); }
             <input v-model="spaceForm.label" placeholder="My game" />
           </div>
 
-          <div class="field">
+          <div class="field" id="field-saves-dir">
             <label>Saves directory</label>
             <div class="input-row">
               <input v-model="spaceForm.saves_dir" placeholder="/path/to/game/saves" />
@@ -460,18 +458,18 @@ table.diff-table td.new { color: var(--green); }
             </div>
           </div>
 
-          <div class="field">
+          <div class="field" id="field-node-hint">
             <label>Node hint format <span class="optional">(optional)</span></label>
             <input v-model="spaceForm.node_hint_format"
                    style="font-family:monospace" />
           </div>
 
-          <div class="field">
+          <div class="field" id="field-slot-exclude">
             <label>Slot exclude regex <span class="optional">(optional, e.g. autosave)</span></label>
             <input v-model="spaceForm.slot_exclude" placeholder="autosave" style="font-family:monospace" />
           </div>
 
-          <details class="advanced">
+          <details class="advanced" id="advanced-details">
             <summary>Advanced</summary>
             <div class="field">
               <label>Library path <span class="optional">(default: app data)</span></label>
@@ -486,10 +484,14 @@ table.diff-table td.new { color: var(--green); }
                 <input :value="spaceForm.library_path" disabled />
               </template>
             </div>
-            <div class="field">
-              <label>Monotonic variables <span class="optional">(one per line)</span></label>
-              <textarea v-model="monotonic_vars_text" rows="5"
-                        style="font-family:monospace;font-size:12px"></textarea>
+            <div class="field" id="field-lineage-validity">
+              <div style="display:flex;align-items:center;gap:6px">
+                <label>Lineage validity check expression <span class="optional">(optional)</span></label>
+                <button class="help-btn" @click.stop="toggleHelp('lineage', $event)" title="Expression Help">?</button>
+              </div>
+              <input v-model="spaceForm.lineage_validity_expr"
+                     placeholder="e.g. delta('money') &gt;= 0"
+                     style="font-family:monospace;font-size:12px" />
             </div>
           </details>
 
@@ -944,13 +946,18 @@ table.diff-table td.new { color: var(--green); }
        }">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:6px">
       <span style="font-size:13px;font-weight:600;color:var(--accent)">
-        {{ helpPopover.type === 'filter' ? '🔍 Graph Filter Expressions' : '🔍 Regex Filter Basics' }}
+        {{ helpPopoverTitle }}
       </span>
       <button @click="helpPopover.open = false" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;font-weight:bold">✕ Close</button>
     </div>
 
-    <!-- Filter Help Content -->
-    <div v-if="helpPopover.type === 'filter'" style="font-size:12px;color:var(--text);line-height:1.5;display:flex;flex-direction:column;gap:8px">
+    <!-- Filter / Invalid Lineage Expression Help Content (same language) -->
+    <div v-if="helpPopover.type === 'filter' || helpPopover.type === 'lineage'" style="font-size:12px;color:var(--text);line-height:1.5;display:flex;flex-direction:column;gap:8px">
+      <div v-if="helpPopover.type === 'lineage'">
+        Evaluated against each node's diff from its parent. When the
+        expression evaluates <strong>false</strong>, the node's lineage is
+        marked invalid.
+      </div>
       <div><strong>Functions:</strong>
         <ul style="margin:4px 0 0 16px;padding:0">
           <li><code>delta('var')</code> — Change in value vs parent node</li>
@@ -1000,7 +1007,7 @@ const app = createApp({
         library_path: '',
         node_hint_format: '',
         slot_exclude: '',
-        monotonic_vars: [],
+        lineage_validity_expr: '',
         saving: false,
         error: '',
         isNew: false,
@@ -1068,9 +1075,13 @@ const app = createApp({
       const s = this.spaces.find(x => x.id === this.selectedSpaceId);
       return (s && s.filter_history) || [];
     },
-    monotonic_vars_text: {
-      get() { return this.spaceForm.monotonic_vars.join('\n'); },
-      set(v) { this.spaceForm.monotonic_vars = v.split('\n').map(s => s.trim()).filter(Boolean); },
+    helpPopoverTitle() {
+      const titles = {
+        filter: '🔍 Graph Filter Expressions',
+        lineage: '⚠ Lineage Validity Check Expression',
+        regex: '🔍 Regex Filter Basics',
+      };
+      return titles[this.helpPopover.type] || titles.regex;
     },
     filteredDiffChanges() {
       if (!this.diffData) return [];
@@ -1169,7 +1180,7 @@ const app = createApp({
         library_path: space.library_path,
         node_hint_format: space.node_hint_format,
         slot_exclude: space.slot_exclude,
-        monotonic_vars: [...(space.monotonic_vars || [])],
+        lineage_validity_expr: space.lineage_validity_expr || '',
         saving: false,
         error: '',
         isNew: false,
@@ -1182,7 +1193,7 @@ const app = createApp({
         label: '', saves_dir: '', library_path: '',
         node_hint_format: '{_last_say_who}: {_last_say_what}',
         slot_exclude: '',
-        monotonic_vars: [],
+        lineage_validity_expr: '',
         saving: false, error: '', isNew: true,
       };
     },
@@ -1202,8 +1213,8 @@ const app = createApp({
           node_hint_format: this.spaceForm.node_hint_format,
           slot_exclude: this.spaceForm.slot_exclude,
         };
-        if (this.spaceForm.monotonic_vars.length) {
-          body.monotonic_vars = this.spaceForm.monotonic_vars;
+        if (this.spaceForm.lineage_validity_expr) {
+          body.lineage_validity_expr = this.spaceForm.lineage_validity_expr;
         }
         const resp = await fetch('/api/spaces', {
           method: 'POST',
@@ -1239,7 +1250,7 @@ const app = createApp({
             saves_dir: this.spaceForm.saves_dir,
             node_hint_format: this.spaceForm.node_hint_format,
             slot_exclude: this.spaceForm.slot_exclude,
-            monotonic_vars: this.spaceForm.monotonic_vars,
+            lineage_validity_expr: this.spaceForm.lineage_validity_expr,
           }),
         });
         if (!resp.ok) throw new Error((await resp.json().catch(() => ({detail: resp.statusText}))).detail);
@@ -1273,7 +1284,7 @@ const app = createApp({
           this.spaceForm = {
             label: '', saves_dir: '', library_path: '',
             node_hint_format: '', slot_exclude: '',
-            monotonic_vars: [], saving: false, error: '', isNew: false,
+            lineage_validity_expr: '', saving: false, error: '', isNew: false,
           };
         }
       }
@@ -1605,6 +1616,7 @@ const app = createApp({
         .datum(d => d.data.sha)
         .each(function() {
           d3.select(this).append('rect')
+            .attr('class', 'node-bg')
             .attr('rx', 6).attr('ry', 6)
             .attr('x', -nodeW / 2).attr('y', -nodeH / 2)
             .attr('width', nodeW).attr('height', nodeH);
@@ -1636,26 +1648,95 @@ const app = createApp({
       // hydrateVisibleNodes().
       const viewportBounds = this._viewportWorldBounds();
 
+      // An invalid-lineage expression evaluates true = valid, false = flag
+      // as suspect — same convention as the graph filter, just parsed once
+      // per render here instead of toggled on/off by the user.
+      const lineageExpr = (this.spaces.find(s => s.id === this.selectedSpaceId) || {}).lineage_validity_expr;
+      let lineageAst = null;
+      if (lineageExpr) {
+        try { lineageAst = jsep(lineageExpr); } catch (e) { lineageAst = null; }
+      }
+
       inner.selectAll('g.node').each(function(sha) {
         const pos = posMap.get(sha);
+        const n = self.graphData.nodes.find(nd => nd.sha === sha);
         const inView = !viewportBounds || self._inBounds(pos, viewportBounds);
+
+        // Current/HEAD border: a ring outside the node's own edge, doubled
+        // in thickness, so it doesn't compete with the selected/invalid
+        // rings for the same stroke. Added before decoration (image/pencil/
+        // etc.) so those paint on top of it instead of being covered.
+        if (n && n.is_head) {
+          const pad = 4;
+          d3.select(this).append('rect')
+            .attr('class', 'head-ring')
+            .attr('x', -nodeW / 2 - pad).attr('y', -nodeH / 2 - pad)
+            .attr('width', nodeW + pad * 2).attr('height', nodeH + pad * 2)
+            .attr('rx', 9).attr('ry', 9)
+            .attr('fill', 'none')
+            .attr('stroke', '#c8a020')
+            .attr('stroke-width', 5);
+        }
+
         if (inView) {
           self._decorateNode(this, sha);
         } else {
           d3.select(this).classed('node-placeholder', true);
-          const n = self.graphData.nodes.find(nd => nd.sha === sha);
           if (n && n.is_head) {
-            const triY = -(nodeH / 2) - 10;
+            const triY = -(nodeH / 2) - 14;
             d3.select(this).append('polygon')
-              .attr('points', `-8,${triY} 8,${triY} 0,${triY + 10}`)
+              .attr('points', `-11,${triY} 11,${triY} 0,${triY + 14}`)
               .attr('fill', '#c8a020');
           }
         }
+
+        const vars = self.nodeStates[sha] || {};
         if (self.filterActive && self.filterParsed) {
-          const vars = self.nodeStates[sha] || {};
           let passes = true;
           try { passes = !!self.evalJsep(self.filterParsed, vars, sha); } catch(e) {}
           if (!passes) d3.select(this).style('opacity', '0.25').style('filter', 'blur(2px)');
+        }
+        if (lineageAst) {
+          let valid = true;
+          try { valid = !!self.evalJsep(lineageAst, vars, sha); } catch(e) {}
+          if (!valid) {
+            d3.select(this).classed('suspect', true);
+
+            // Invalid-lineage border: same edge as the node's own border
+            // (where "selected" sits), but doubled in thickness and grown
+            // inward — opposite direction from the HEAD ring, which grows
+            // outward from that same edge.
+            const invalidStrokeW = 5;
+            const pad = invalidStrokeW / 2;
+            d3.select(this).append('rect')
+              .attr('class', 'invalid-ring')
+              .attr('x', -nodeW / 2 + pad).attr('y', -nodeH / 2 + pad)
+              .attr('width', nodeW - pad * 2).attr('height', nodeH - pad * 2)
+              .attr('rx', 4).attr('ry', 4)
+              .attr('fill', 'none')
+              .attr('stroke', '#c04040')
+              .attr('stroke-width', invalidStrokeW);
+
+            const iconSize = 30, gap = 6, badgeH = 30;
+            const badgeBottomY = -nodeH / 2 - 4;
+            const badgeY = badgeBottomY - badgeH;
+            const iconX = -nodeW / 2;
+            const boxX = iconX + iconSize + gap;
+            const badgeG = d3.select(this).append('g').attr('class', 'lineage-invalid-badge');
+            badgeG.append('text')
+              .attr('x', iconX).attr('y', badgeY + badgeH / 2 + 10)
+              .attr('text-anchor', 'start')
+              .attr('font-size', iconSize)
+              .attr('fill', '#ff3b3b')
+              .text('⚠');
+            badgeG.append('text')
+              .attr('x', boxX).attr('y', badgeY + badgeH / 2 + 5)
+              .attr('text-anchor', 'start')
+              .attr('font-size', '15')
+              .attr('font-weight', 'bold')
+              .attr('fill', '#ff3b3b')
+              .text('Invalid lineage detected');
+          }
         }
       });
 
@@ -1757,9 +1838,9 @@ const app = createApp({
           .text(n.hint);
       }
       if (n.is_head) {
-        const triY = -(nodeH / 2) - 10;
+        const triY = -(nodeH / 2) - 14;
         nodeSel.append('polygon')
-          .attr('points', `-8,${triY} 8,${triY} 0,${triY + 10}`)
+          .attr('points', `-11,${triY} 11,${triY} 0,${triY + 14}`)
           .attr('fill', '#c8a020');
       }
       const hasNote = !!n.note;
@@ -1933,9 +2014,10 @@ const app = createApp({
     async loadAllStates() {
       if (!this.selectedSpaceId || !this.selectedSlot) return;
       try {
-        const favs = this.spaces.find(s => s.id === this.selectedSpaceId)?.favorite_vars || [];
+        const space = this.spaces.find(s => s.id === this.selectedSpaceId);
+        const favs = space?.favorite_vars || [];
         const needed = new Set(favs);
-        const expr = ((this.graphOrderByExpr || '') + ' ' + (this.filterExpr || '')).match(/[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
+        const expr = ((this.graphOrderByExpr || '') + ' ' + (this.filterExpr || '') + ' ' + (space?.lineage_validity_expr || '')).match(/[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
         const reserved = new Set(['chrono', 'jaccard', 'asc', 'desc', 'score', 'day', 'and', 'or', 'not', 'true', 'false', 'delta', 'changed', 'added']);
         expr.forEach(v => {
           if (!reserved.has(v.toLowerCase())) needed.add(v);
@@ -2074,9 +2156,7 @@ const app = createApp({
       if (!result.committed) {
         this.showToast('No new save detected.');
       } else {
-        this.showToast(result.anomaly
-          ? `⚠ Committed ${result.short} — suspect`
-          : `Committed ${result.short}`);
+        this.showToast(`Committed ${result.short}`);
         await this.loadGraph();
         if (this.autoSelectNewNodes && result.sha) {
           await this.selectNode(result.sha);
@@ -2292,9 +2372,7 @@ const app = createApp({
           this.showToast('Watch error: ' + data.error);
         } else if (data.committed) {
           if (data.slot === this.selectedSlot) {
-            this.showToast(data.anomaly
-              ? `⚠ Auto-committed ${data.short} — suspect`
-              : `Auto-committed ${data.short}`);
+            this.showToast(`Auto-committed ${data.short}`);
             await this.loadGraph();
             if (this.autoSelectNewNodes && data.sha) {
               await this.selectNode(data.sha);
@@ -2355,7 +2433,47 @@ const app = createApp({
               title: 'Game Spaces',
               description: 'Game Spaces represent your visual novel playthroughs. We\'ve initialized an <b>Example Game Space</b> for you to explore.',
               side: 'bottom',
+              align: 'start'
+            }
+          },
+          {
+            element: '#field-saves-dir',
+            popover: {
+              title: 'Saves Directory',
+              description: 'Point this at the game\'s "game/saves/" folder (from the game\'s root, .exe-containing folder). This is the only required field.',
+              side: 'bottom',
+              align: 'start'
+            }
+          },
+          {
+            element: '#field-node-hint',
+            popover: {
+              title: 'Node Hint Format',
+              description: 'Shows a snippet (e.g. the last dialogue line) under each node using {variable} placeholders.',
+              side: 'bottom',
+              align: 'start'
+            }
+          },
+          {
+            element: '#field-slot-exclude',
+            popover: {
+              title: 'Slot Exclude Regex',
+              description: 'Hides matching slot names, like autosaves, from the slot picker.',
+              side: 'bottom',
+              align: 'start'
+            }
+          },
+          {
+            element: '#field-lineage-validity',
+            popover: {
+              title: 'Lineage Validity Check',
+              description: 'An optional expression (same language as the Graph Filter) describing what a valid save looks like, e.g. delta(\'karma\') >= 0. Any node where it evaluates false gets flagged with a red border — useful for catching an accidental save of past state over future state.',
+              side: 'left',
               align: 'start',
+              onHighlightStarted: () => {
+                const details = document.getElementById('advanced-details');
+                if (details) details.open = true;
+              },
               onNextClick: async () => {
                 if (self.selectedSpaceId) {
                   await self.openGraph(self.selectedSpaceId);

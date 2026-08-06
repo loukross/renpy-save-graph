@@ -3,8 +3,6 @@
 The *Director* ties a game saves directory to a Library (git graph).  Its job:
 
 - Detect when the player writes a new save into any managed slot and commit it.
-- Check the new save against monotonic invariants; if violated, mark the commit
-  suspect and add a red warning band to the slot thumbnail.
 - Materialize any library commit back into a slot (for route switching).
 - Apply a slot exclude regex to ignore unwanted slots (e.g. autosaves).
 
@@ -17,51 +15,26 @@ import hashlib
 import json
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from . import extractor
-from .library import BLOB, STATE, CommitInfo, GitError, Library
+from .library import CommitInfo, GitError, Library
 from .thumbnail import restamp_save
-
-DEFAULT_MONOTONIC_VARS: list[str] = []
 
 _SLOT_HASHES_FILE = ".slot_hashes.json"
 _SLOT_BRANCHES_FILE = ".slot_branches.json"
-_SUSPECT_PREFIX = "[SUSPECT]"
-_WARN_TEXT = (
-    "⚠ Invalid save history.\n"
-    "You may need to save this\n"
-    "in a different slot, then\n"
-    "revert this slot to\n"
-    "another point."
-)
-
-
-@dataclass
-class AnomalyReport:
-    violations: list[str]
-
-    @property
-    def ok(self) -> bool:
-        return not self.violations
 
 
 @dataclass
 class IngestResult:
     slot_name: str
     commit: CommitInfo
-    anomaly: AnomalyReport
 
 
 @dataclass
 class SpaceConfig:
     saves_dir: Path
     library_path: Path
-    monotonic_vars: list[str] = field(
-        default_factory=lambda: list(DEFAULT_MONOTONIC_VARS)
-    )
     slot_exclude: str = ""  # regex; matching slot names are ignored
 
 
@@ -132,24 +105,6 @@ class Director:
             return False
         return self._sha256(sp) != hashes.get(slot_name)
 
-    # -- monotonic check -----------------------------------------------------
-
-    def _check_invariants(
-        self, head_vars: dict[str, Any], new_vars: dict[str, Any]
-    ) -> AnomalyReport:
-        violations: list[str] = []
-        for var in self.config.monotonic_vars:
-            old_val = head_vars.get(var)
-            new_val = new_vars.get(var)
-            if old_val is None or new_val is None:
-                continue
-            try:
-                if float(new_val) < float(old_val):
-                    violations.append(f"{var}: {old_val} → {new_val}")
-            except (TypeError, ValueError):
-                pass
-        return AnomalyReport(violations)
-
     def _ensure_active_branch_for_ingest(self, slot_name: str) -> str:
         """Ensure the slot is on an active branch, auto-forking if at a historical commit."""
         active = self._active_branch(slot_name)
@@ -188,36 +143,8 @@ class Director:
         # Auto-fork if sitting at a historical commit SHA from a restore
         self._ensure_active_branch_for_ingest(slot_name)
 
-        has_head = True
         try:
-            self._lib.head()
-        except GitError:
-            has_head = False
-
-        head_vars: dict[str, Any] = {}
-        if has_head:
-            state_path = Path(self.config.library_path) / STATE
-            if state_path.exists():
-                head_vars = json.loads(
-                    state_path.read_text(encoding="utf-8")
-                ).get("variables", {})
-
-        new_state = extractor.extract(str(sp))
-        anomaly = (
-            self._check_invariants(head_vars, new_state.variables)
-            if has_head else AnomalyReport([])
-        )
-
-        subject_note = note
-        body_extra: str | None = None
-        if anomaly.violations:
-            subject_note = f"{_SUSPECT_PREFIX} {(note or '').strip()}".strip()
-            body_extra = "suspect: " + "; ".join(anomaly.violations)
-
-        try:
-            commit_info = self._lib.commit_savepoint(
-                sp, note=subject_note, body_extra=body_extra
-            )
+            commit_info = self._lib.commit_savepoint(sp, note=note)
         except GitError as exc:
             if "nothing to commit" in str(exc):
                 hashes[slot_name] = self._sha256(sp)
@@ -225,13 +152,11 @@ class Director:
                 return None
             raise
 
-        stamp_text = commit_info.stamp_text()
-        warning_text = _WARN_TEXT if anomaly.violations else None
-        sp.write_bytes(restamp_save(sp.read_bytes(), stamp_text, warning_text=warning_text))
+        sp.write_bytes(restamp_save(sp.read_bytes(), commit_info.stamp_text()))
 
         hashes[slot_name] = self._sha256(sp)
         self._save_hashes(hashes)
-        return IngestResult(slot_name=slot_name, commit=commit_info, anomaly=anomaly)
+        return IngestResult(slot_name=slot_name, commit=commit_info)
 
     def ingest_all(self, note: str | None = None) -> list[IngestResult]:
         """Ingest all changed slots. Returns results only for slots that committed."""

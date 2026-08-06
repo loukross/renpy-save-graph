@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import json
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 from platformdirs import user_data_dir
-
-from .watcher import DEFAULT_MONOTONIC_VARS
 
 APP_NAME = "renpy-save-graph"
 
@@ -32,14 +30,12 @@ class GameSpace:
     label: str
     saves_dir: str
     library_path: str
-    monotonic_vars: list[str] = field(
-        default_factory=lambda: list(DEFAULT_MONOTONIC_VARS)
-    )
     node_hint_format: str = ""
     slot_exclude: str = ""  # regex; matching slot names are ignored
     favorite_vars: list[str] = field(default_factory=list)
     filter_history: list[str] = field(default_factory=list)
     sort_history: list[str] = field(default_factory=list)
+    lineage_validity_expr: str = ""
 
 
 @dataclass
@@ -58,5 +54,9 @@ class AppConfig:
         if not path.exists():
             return cls()
         data = json.loads(path.read_text(encoding="utf-8"))
-        spaces = [GameSpace(**s) for s in data.get("spaces", [])]
+        known_fields = {f.name for f in fields(GameSpace)}
+        spaces = [
+            GameSpace(**{k: v for k, v in s.items() if k in known_fields})
+            for s in data.get("spaces", [])
+        ]
         return cls(spaces=spaces)

@@ -32,18 +32,8 @@ def _load_font(size: int) -> ImageFont.ImageFont:
     return ImageFont.load_default()
 
 
-def stamp_png(
-    png_bytes: bytes,
-    text: str,
-    *,
-    warning_text: str | None = None,
-) -> bytes:
-    """Return a PNG with provenance burned into a bar at the top.
-
-    ``text`` (the hash / branch) is always shown: dark bar, blue text.
-    If ``warning_text`` is given, a red band is drawn below it in yellow text,
-    sized to fit however many lines the string contains.
-    """
+def stamp_png(png_bytes: bytes, text: str) -> bytes:
+    """Return a PNG with provenance (the hash / branch) burned into a bar at the top."""
     try:
         img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
     except Exception:
@@ -52,45 +42,21 @@ def stamp_png(
     row_h = max(20, h // 9)
     font = _load_font(row_h - 8)
 
-    warn_lines = warning_text.splitlines() if warning_text else []
-    warn_font = _load_font(max(9, row_h - 12)) if warn_lines else None
-    warn_line_h = max(9, row_h - 12) + 3
-    warn_band_h = len(warn_lines) * warn_line_h + 4 if warn_lines else 0
-
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
-
-    # Hash / branch row (always present).
     draw.rectangle([0, 0, w, row_h], fill=(0, 0, 0, 170))
     draw.text((6, 3), text, fill=(120, 220, 255, 255), font=font)
-
-    # Warning band (anomaly only) — sized to content.
-    if warn_lines:
-        draw.rectangle([0, row_h, w, row_h + warn_band_h], fill=(180, 30, 30, 200))
-        for i, line in enumerate(warn_lines):
-            draw.text(
-                (6, row_h + 2 + i * warn_line_h),
-                line,
-                fill=(255, 240, 80, 255),
-                font=warn_font,
-            )
 
     out = io.BytesIO()
     Image.alpha_composite(img, overlay).convert("RGB").save(out, format="PNG")
     return out.getvalue()
 
 
-def restamp_save(
-    save_bytes: bytes,
-    text: str,
-    *,
-    warning_text: str | None = None,
-) -> bytes:
+def restamp_save(save_bytes: bytes, text: str) -> bytes:
     """Return a copy of a `.save` with its `screenshot.png` member restamped.
 
     All other members (log, json, ...) are preserved byte-for-byte with their
     original compression, so the save loads identically in-game.
-    Pass ``warning_text`` to add a red anomaly band below the hash row.
     """
     src = zipfile.ZipFile(io.BytesIO(save_bytes))
     out_buf = io.BytesIO()
@@ -98,7 +64,7 @@ def restamp_save(
         for info in src.infolist():
             data = src.read(info.filename)
             if info.filename == "screenshot.png":
-                data = stamp_png(data, text, warning_text=warning_text)
+                data = stamp_png(data, text)
             # Preserve each member's original compression method.
             dst.writestr(info, data, compress_type=info.compress_type)
     return out_buf.getvalue()
