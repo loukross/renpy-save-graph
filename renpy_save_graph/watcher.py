@@ -15,7 +15,7 @@ import hashlib
 import json
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .library import CommitInfo, GitError, Library
@@ -36,6 +36,7 @@ class SpaceConfig:
     saves_dir: Path
     library_path: Path
     slot_exclude: str = ""  # regex; matching slot names are ignored
+    additional_saves_dirs: list[Path] = field(default_factory=list)
 
 
 class Director:
@@ -50,19 +51,55 @@ class Director:
     def library(self) -> Library:
         return self._lib
 
+    @property
+    def all_saves_dirs(self) -> list[Path]:
+        """Primary saves dir first, then the additional ones, deduplicated."""
+        dirs: list[Path] = []
+        seen: set[Path] = set()
+        for d in [self.config.saves_dir, *self.config.additional_saves_dirs]:
+            p = Path(d).expanduser()
+            key = p.resolve()
+            if key not in seen:
+                seen.add(key)
+                dirs.append(p)
+        return dirs
+
     # -- slot discovery ------------------------------------------------------
 
+    def _slot_files(self, slot_name: str | None = None) -> list[Path]:
+        """Every ``.save`` file across the watched dirs, optionally for one slot."""
+        files = []
+        for d in self.all_saves_dirs:
+            if not d.is_dir():
+                continue
+            for f in sorted(d.iterdir()):
+                if not f.is_file() or not f.name.lower().endswith(".save"):
+                    continue
+                if slot_name is None or f.stem == slot_name:
+                    files.append(f)
+        return files
+
     def slot_names(self) -> list[str]:
-        """Slot names present in the saves dir, filtered by slot_exclude."""
-        saves = sorted(
-            f.stem for f in Path(self.config.saves_dir).glob("*.save")
-        )
+        """Slot names present in the saves dirs, filtered by slot_exclude."""
+        saves = sorted({f.stem for f in self._slot_files()})
         if self._exclude_re:
             saves = [s for s in saves if not self._exclude_re.search(s)]
         return saves
 
     def slot_path(self, slot_name: str) -> Path:
-        return Path(self.config.saves_dir) / f"{slot_name}.save"
+        """The file to ingest for this slot.
+
+        A slot name can exist in more than one watched dir (a game split across
+        installs reuses the same slot names).  Prefer a file that actually
+        changed since we last recorded it; among equals take the newest.  If two
+        changed at once the other one is picked up on the next poll.
+        """
+        candidates = self._slot_files(slot_name)
+        if not candidates:
+            return self.all_saves_dirs[0] / f"{slot_name}.save"
+        hashes = self._load_hashes()
+        changed = [c for c in candidates if self._file_changed(c, slot_name, hashes)]
+        return max(changed or candidates, key=lambda p: p.stat().st_mtime)
 
     # -- hash tracking -------------------------------------------------------
 
@@ -99,11 +136,35 @@ class Director:
     def _sha256(self, path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
+    def _file_changed(self, path: Path, slot_name: str, hashes: dict[str, str]) -> bool:
+        """True if `path` differs from the hash last recorded *for that file*.
+
+        Hashes are keyed by absolute path so the same slot name in two watched
+        dirs is tracked separately.  Spaces created before additional saves dirs
+        existed only have a slot-name key, which described the primary dir's
+        file — honour it there so upgrading a space doesn't re-ingest everything.
+        A file we have never hashed counts as changed, so a newly watched dir can
+        never be skipped forever.
+        """
+        key = str(path.resolve())
+        if key in hashes:
+            return self._sha256(path) != hashes[key]
+        if slot_name in hashes and path.parent.resolve() == self.all_saves_dirs[0].resolve():
+            return self._sha256(path) != hashes[slot_name]
+        return True
+
+    def _record_hash(self, hashes: dict[str, str], slot_name: str, sp: Path) -> None:
+        """Record `sp`'s hash under its path.
+
+        The legacy slot-name key is deliberately left untouched: it describes
+        the primary dir's file at upgrade time, and overwriting it with another
+        dir's hash would make that file look changed and re-ingest it.
+        """
+        hashes[str(sp.resolve())] = self._sha256(sp)
+
     def _slot_changed(self, slot_name: str, hashes: dict[str, str]) -> bool:
         sp = self.slot_path(slot_name)
-        if not sp.exists():
-            return False
-        return self._sha256(sp) != hashes.get(slot_name)
+        return sp.exists() and self._file_changed(sp, slot_name, hashes)
 
     def _ensure_active_branch_for_ingest(self, slot_name: str) -> str:
         """Ensure the slot is on an active branch, auto-forking if at a historical commit."""
@@ -147,14 +208,14 @@ class Director:
             commit_info = self._lib.commit_savepoint(sp, note=note)
         except GitError as exc:
             if "nothing to commit" in str(exc):
-                hashes[slot_name] = self._sha256(sp)
+                self._record_hash(hashes, slot_name, sp)
                 self._save_hashes(hashes)
                 return None
             raise
 
         sp.write_bytes(restamp_save(sp.read_bytes(), commit_info.stamp_text()))
 
-        hashes[slot_name] = self._sha256(sp)
+        self._record_hash(hashes, slot_name, sp)
         self._save_hashes(hashes)
         return IngestResult(slot_name=slot_name, commit=commit_info)
 
@@ -202,9 +263,10 @@ class Director:
             info = CommitInfo(sha=info.sha, short=info.short, branch=slot_name, subject=info.subject, when=info.when)
 
         stamp_name = target_branch if target_branch and len(target_branch) < 40 else slot_name
-        self._lib.materialize(self.slot_path(slot_name), stamp=True, stamp_name=stamp_name)
+        sp = self.slot_path(slot_name)
+        self._lib.materialize(sp, stamp=True, stamp_name=stamp_name)
         hashes = self._load_hashes()
-        hashes[slot_name] = self._sha256(self.slot_path(slot_name))
+        self._record_hash(hashes, slot_name, sp)
         self._save_hashes(hashes)
 
         branches = self._load_branches()
@@ -235,7 +297,7 @@ class Director:
             sp = self.slot_path(slot_name)
             self._lib.materialize(sp, stamp=True, stamp_name=active)
             hashes = self._load_hashes()
-            hashes[slot_name] = self._sha256(sp)
+            self._record_hash(hashes, slot_name, sp)
             self._save_hashes(hashes)
         except Exception:
             pass

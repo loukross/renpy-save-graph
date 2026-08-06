@@ -62,6 +62,7 @@ The launcher script installs the Python package, builds the web UI (`npm install
 
 ## ✨ Feature Notes
 
+- **Multi-folder save tracking**: Some Ren'Py games are distributed in multiple packages with later episodes installed separately and thus will have multiple save folders. The user can add save folders to track, and this app will ingest all save files with the same name into a single graph for each slot position.  This feature will assume all given folders are for the same game title and that files are named with the same pattern for all save slots.
 - **Lineage Validity Checks**: Give a Gamespace an optional expression (like the Graph Filter Expression, e.g. `delta('karma') >= 0`) qualifying a save as valid and/or what a valid difference is between a save and its preceding save. Any node where it evaluates false gets flagged an "Invalid lineage detected" label. This helps to catch accidental saves of "past state" over "future state" (from backtracking in-game or from other save slots). What makes a good check will vary by game title.
 - **Milestone Progress Alignment**: Define variables like `currentEpisode` as milestones and see saves for all your playthroughs line up at a vertical wherever each one reaches them.
 - **Route Targets**: Flag subtrees where your play is off-track for one or more goals. For example, enabling a "Max Points" target as `delta('points') >= 0` might alert you to saves in which your choices have reduced your accumulated points.

@@ -26,7 +26,7 @@
       <div class="modal-footer">
         <button class="btn-secondary" @click="$emit('close')">Cancel</button>
         <button class="btn-primary" :disabled="!selected" @click="$emit('confirm', selected)">
-          Select folder
+          {{ confirmLabel || 'Select folder' }}
         </button>
       </div>
     </div>
@@ -41,6 +41,7 @@ const props = defineProps({
   nodes: Array,
   selected: String,
   loading: Boolean,
+  confirmLabel: String,
 });
 
 defineEmits(['close', 'select', 'toggle', 'confirm']);

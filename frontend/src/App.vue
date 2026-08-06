@@ -35,6 +35,7 @@
             :space-form="spaceForm"
             :selected-space-id="selectedSpaceId"
             :default-data-dir="defaultDataDir"
+            @remove-additional-saves-dir="removeAdditionalSavesDir"
             @add-milestone-var="addMilestoneVar"
             @remove-milestone-var="removeMilestoneVar"
             @open-graph="openGraph"
@@ -203,6 +204,7 @@
       :nodes="picker.nodes"
       :selected="picker.selected"
       :loading="picker.loading"
+      :confirm-label="picker.target === 'additional_saves_dir' ? 'Add directory' : 'Select folder'"
       @close="picker.open = false"
       @select="pickerSelect"
       @toggle="pickerToggle"
@@ -429,6 +431,7 @@ async function onSpaceSelected() {
     isNew: false,
     label: sp.label || '',
     saves_dir: sp.saves_dir || '',
+    additional_saves_dirs: sp.additional_saves_dirs ? [...sp.additional_saves_dirs] : [],
     library_path: sp.library_path || '',
     node_hint_format: sp.node_hint_format || '',
     slot_exclude: sp.slot_exclude || '',
@@ -448,6 +451,7 @@ function startNewSpace() {
     isNew: true,
     label: '',
     saves_dir: '',
+    additional_saves_dirs: [],
     library_path: '',
     node_hint_format: '',
     slot_exclude: '',
@@ -468,6 +472,7 @@ function duplicateSpace() {
     isNew: true,
     label: '',
     saves_dir: '',
+    additional_saves_dirs: JSON.parse(JSON.stringify(current.additional_saves_dirs || [])),
     library_path: '',
     node_hint_format: current.node_hint_format || '',
     slot_exclude: current.slot_exclude || '',
@@ -490,6 +495,7 @@ async function addSpace() {
       body: JSON.stringify({
         label: spaceForm.value.label,
         saves_dir: spaceForm.value.saves_dir,
+        additional_saves_dirs: spaceForm.value.additional_saves_dirs,
         library_path: spaceForm.value.library_path,
         node_hint_format: spaceForm.value.node_hint_format,
         slot_exclude: spaceForm.value.slot_exclude,
@@ -521,6 +527,7 @@ async function saveSpaceConfig() {
       body: JSON.stringify({
         label: spaceForm.value.label,
         saves_dir: spaceForm.value.saves_dir,
+        additional_saves_dirs: spaceForm.value.additional_saves_dirs,
         node_hint_format: spaceForm.value.node_hint_format,
         slot_exclude: spaceForm.value.slot_exclude,
         lineage_validity_expr: spaceForm.value.lineage_validity_expr,
@@ -529,8 +536,13 @@ async function saveSpaceConfig() {
       }),
     });
     if (resp.ok) {
-      await loadConfig();
+      spaceForm.value.open = false;
       showToast('Space saved.');
+      await loadConfig();
+      loadSlots();
+      if (view.value === 'graph' && selectedSpaceId.value) {
+        reloadGraph();
+      }
     }
   } catch (e) {
     console.error('Error saving space config:', e);
@@ -587,6 +599,10 @@ async function openGraph(spaceId) {
 
 async function reloadGraph() {
   if (!selectedSpaceId.value || !selectedSlot.value) return;
+  try {
+    await fetch(`/api/spaces/${selectedSpaceId.value}/ingest`, { method: 'POST' });
+  } catch (e) {}
+  await loadSlots();
   await loadGraph(selectedSpaceId.value, selectedSlot.value, graphBaseSort.value, graphBaseDir.value, currentSpace.value, appliedFilterExpr.value, graphOrderByExpr.value);
   await loadTags(selectedSpaceId.value, selectedSlot.value);
 }
@@ -716,6 +732,12 @@ function onRemoveNodeTag(sha, tag) {
   removeNodeTag(selectedSpaceId.value, selectedSlot.value, sha, tag, reloadGraph);
 }
 
+function removeAdditionalSavesDir(idx) {
+  if (spaceForm.value.additional_saves_dirs) {
+    spaceForm.value.additional_saves_dirs.splice(idx, 1);
+  }
+}
+
 function addMilestoneVar() {
   const v = spaceForm.value.newMilestoneInput.trim();
   if (v && !spaceForm.value.milestone_vars.includes(v)) {
@@ -751,16 +773,18 @@ function addToFilter(varName, value) {
 // -- ingest / restore / delete ------------------------------------------
 
 async function ingest() {
-  if (!selectedSpaceId.value || !selectedSlot.value) return;
+  if (!selectedSpaceId.value) return;
   try {
-    const result = await fetch(`/api/spaces/${selectedSpaceId.value}/slots/${selectedSlot.value}/ingest`, { method: 'POST' }).then(r => r.json());
-    if (!result.committed) {
-      showToast('No new save detected.');
+    const res = await fetch(`/api/spaces/${selectedSpaceId.value}/ingest`, { method: 'POST' }).then(r => r.json());
+    await loadSlots();
+    await reloadGraph();
+    if (!res.count) {
+      showToast('No new save detected in watched folders.');
     } else {
-      showToast(`Committed ${result.short}`);
-      await reloadGraph();
-      if (autoSelectOnAdd.value && result.sha) {
-        await onSelectNode(result.sha);
+      showToast(`Committed ${res.count} new save point(s).`);
+      const lastSha = res.results && res.results.length ? res.results[res.results.length - 1].sha : null;
+      if (autoSelectOnAdd.value && lastSha) {
+        await onSelectNode(lastSha);
       }
     }
   } catch (e) {
@@ -917,38 +941,85 @@ function stopWatcher() {
 
 // -- folder picker --------------------------------------------------------
 
+async function fetchFolderNode(path) {
+  try {
+    const res = await fetch(`/api/browse?path=${encodeURIComponent(path)}`);
+    const data = res.ok ? await res.json() : { dirs: [], path };
+    const basePath = data.path || path;
+    return (data.dirs || []).map(name => ({
+      name,
+      path: (basePath === '/' ? '' : basePath) + '/' + name,
+      expanded: false,
+      loading: false,
+      children: null,
+    }));
+  } catch (e) {
+    return [];
+  }
+}
+
 async function openPicker(target = 'saves_dir') {
   picker.value.target = target;
-  const current = spaceForm.value[target];
+  let current = target === 'additional_saves_dir'
+    ? spaceForm.value.saves_dir
+    : spaceForm.value[target];
   picker.value.open = true;
   picker.value.selected = current || null;
-  const start = current || '/';
   picker.value.nodes = [];
   picker.value.loading = true;
+
   try {
-    const data = await fetch(`/api/browse?path=${encodeURIComponent(start)}`).then(r => r.json());
-    picker.value.nodes = data.dirs.map(name => ({
-      name, path: data.path + (data.path.endsWith('/') ? '' : '/') + name,
-      expanded: false, loading: false, children: null,
-    }));
+    const rootNodes = await fetchFolderNode('/');
+
+    if (current && current.startsWith('/')) {
+      const parts = current.split('/').filter(Boolean);
+      let curNodes = rootNodes;
+      let accumPath = '';
+
+      for (const part of parts) {
+        accumPath += '/' + part;
+        const match = curNodes.find(n => n.name === part || n.path === accumPath);
+        if (!match) break;
+        const children = await fetchFolderNode(match.path);
+        match.children = children;
+        match.expanded = true;
+        curNodes = children;
+      }
+    }
+    picker.value.nodes = [...rootNodes];
+  } catch (e) {
+    console.error('Error loading folder picker:', e);
   } finally {
     picker.value.loading = false;
   }
 }
 
 async function pickerToggle(node) {
-  if (node.expanded) { node.expanded = false; return; }
-  if (node.children !== null) { node.expanded = true; return; }
+  if (node.expanded) {
+    node.expanded = false;
+    picker.value.nodes = [...picker.value.nodes];
+    return;
+  }
+  if (node.children !== null) {
+    node.expanded = true;
+    picker.value.nodes = [...picker.value.nodes];
+    return;
+  }
   node.loading = true;
   try {
-    const data = await fetch(`/api/browse?path=${encodeURIComponent(node.path)}`).then(r => r.json());
-    node.children = data.dirs.map(name => ({
-      name, path: data.path + (data.path.endsWith('/') ? '' : '/') + name,
+    const res = await fetch(`/api/browse?path=${encodeURIComponent(node.path)}`);
+    const data = res.ok ? await res.json() : { dirs: [], path: node.path };
+    const basePath = data.path || node.path;
+    node.children = (data.dirs || []).map(name => ({
+      name, path: basePath + (basePath.endsWith('/') ? '' : '/') + name,
       expanded: false, loading: false, children: null,
     }));
     node.expanded = true;
+  } catch (e) {
+    console.error('Error expanding folder node:', e);
   } finally {
     node.loading = false;
+    picker.value.nodes = [...picker.value.nodes];
   }
 }
 
@@ -957,7 +1028,14 @@ function pickerSelect(path) {
 }
 
 function selectFolder(path) {
-  spaceForm.value[picker.value.target] = path;
+  if (picker.value.target === 'additional_saves_dir') {
+    if (!spaceForm.value.additional_saves_dirs) spaceForm.value.additional_saves_dirs = [];
+    if (path && !spaceForm.value.additional_saves_dirs.includes(path)) {
+      spaceForm.value.additional_saves_dirs.push(path);
+    }
+  } else {
+    spaceForm.value[picker.value.target] = path;
+  }
   picker.value.open = false;
 }
 
@@ -1055,7 +1133,16 @@ async function startInteractiveTour(force = false) {
         element: '#field-saves-dir',
         popover: {
           title: 'Saves Directory',
-          description: 'Point this at the game\'s "game/saves/" folder (from the game\'s root, .exe-containing folder). This is the only required field.',
+          description: 'Point this at the game\'s "game/saves/" folder (from the game\'s root, .exe-containing folder). This is the primary required field.',
+          side: 'bottom',
+          align: 'start',
+        },
+      },
+      {
+        element: '#field-additional-saves-dirs',
+        popover: {
+          title: 'Additional Saves Directories',
+          description: 'For games split across multiple installations (e.g. Episodes 1–8 and Episode 9+), add extra saves folders here to watch them together and seamlessly link save points across episode releases into one flowchart.',
           side: 'bottom',
           align: 'start',
         },

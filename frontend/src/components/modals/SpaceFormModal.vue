@@ -16,6 +16,28 @@
       </div>
     </div>
 
+    <div class="field" id="field-additional-saves-dirs">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        <label style="margin-bottom:0">Additional saves directories <span class="optional">(optional)</span></label>
+        <button class="help-btn" @click.stop="$emit('toggle-help', 'additional-saves-dirs', $event)" title="Additional Saves Directories Help">?</button>
+        <button class="btn-secondary" @click.prevent="$emit('open-picker', 'additional_saves_dir')" style="font-size:12px;margin-left:auto">+ Add directory…</button>
+      </div>
+      <div v-if="spaceForm.additional_saves_dirs && spaceForm.additional_saves_dirs.length" style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
+        <div
+          v-for="(dir, idx) in spaceForm.additional_saves_dirs"
+          :key="idx"
+          style="display:flex;align-items:center;justify-content:space-between;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:4px 12px;font-family:monospace;font-size:12px;color:var(--accent2)"
+        >
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="dir">{{ dir }}</span>
+          <button
+            @click.prevent="$emit('remove-additional-saves-dir', idx)"
+            style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;font-weight:bold;padding:0;line-height:1;flex-shrink:0"
+            title="Remove directory"
+          >×</button>
+        </div>
+      </div>
+    </div>
+
     <div class="field" id="field-node-hint">
       <label>Node hint format <span class="optional">(optional)</span></label>
       <input v-model="spaceForm.node_hint_format" style="font-family:monospace" />
@@ -171,6 +193,7 @@ const props = defineProps({
 const emit = defineEmits([
   'open-picker',
   'toggle-help',
+  'remove-additional-saves-dir',
   'add-milestone-var',
   'remove-milestone-var',
   'delete-space',

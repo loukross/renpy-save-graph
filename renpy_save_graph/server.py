@@ -30,7 +30,7 @@ from .watcher import Director, SpaceConfig
 
 _HTML_PATH = Path(__file__).parent / "static" / "index.html"
 _ASSETS_DIR = Path(__file__).parent / "static" / "assets"
-_SPACE_PATCHABLE = {"label", "saves_dir", "node_hint_format", "slot_exclude", "lineage_validity_expr", "milestone_vars", "route_targets", "favorite_vars", "filter_history", "sort_history"}
+_SPACE_PATCHABLE = {"label", "saves_dir", "additional_saves_dirs", "node_hint_format", "slot_exclude", "lineage_validity_expr", "milestone_vars", "route_targets", "favorite_vars", "filter_history", "sort_history"}
 
 
 class _SortVal:
@@ -87,6 +87,7 @@ def create_app(config_path: Path) -> FastAPI:
             saves_dir=Path(space.saves_dir),
             library_path=Path(space.library_path),
             slot_exclude=space.slot_exclude,
+            additional_saves_dirs=[Path(d) for d in space.additional_saves_dirs if d],
         ))
 
     def make_db(space: GameSpace) -> DatabaseStore:
@@ -115,13 +116,16 @@ def create_app(config_path: Path) -> FastAPI:
 
     @app.get("/api/browse")
     def api_browse(path: str = "/") -> dict[str, Any]:
-        p = Path(path).resolve()
+        try:
+            p = Path(path).expanduser().resolve() if path else Path("/")
+        except Exception:
+            p = Path("/")
         if not p.exists() or not p.is_dir():
-            raise HTTPException(400, f"not a directory: {path}")
+            p = Path("/")
         try:
             entries = sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))
         except PermissionError:
-            raise HTTPException(403, f"permission denied: {path}")
+            entries = []
         return {
             "path": str(p),
             "parent": str(p.parent) if p.parent != p else None,
@@ -139,6 +143,7 @@ def create_app(config_path: Path) -> FastAPI:
             id=space_id,
             label=body.get("label", ""),
             saves_dir=body["saves_dir"],
+            additional_saves_dirs=body.get("additional_saves_dirs", []),
             library_path=body.get("library_path") or str(default_library_path(space_id)),
             node_hint_format=body.get("node_hint_format", ""),
             slot_exclude=body.get("slot_exclude", ""),
@@ -388,6 +393,23 @@ def create_app(config_path: Path) -> FastAPI:
 
     # -- director actions ----------------------------------------------------
 
+    @app.post("/api/spaces/{space_id}/ingest")
+    def api_ingest_space(space_id: str, note: str = "") -> dict[str, Any]:
+        director = make_director(get_space_or_404(space_id))
+        results = director.ingest_all(note=note or None)
+        return {
+            "count": len(results),
+            "results": [
+                {
+                    "slot": r.slot_name,
+                    "sha": r.commit.sha,
+                    "short": r.commit.short,
+                    "subject": r.commit.subject,
+                }
+                for r in results
+            ],
+        }
+
     @app.post("/api/spaces/{space_id}/slots/{slot_name}/ingest")
     def api_ingest(space_id: str, slot_name: str, note: str = "") -> dict[str, Any]:
         director = make_director(get_space_or_404(space_id))
@@ -501,9 +523,7 @@ def create_app(config_path: Path) -> FastAPI:
     # -- file watcher (SSE) --------------------------------------------------
 
     @app.get("/api/spaces/{space_id}/watch")
-    async def api_watch(request: Request, space_id: str, slot_name: str = ""):
-        space = get_space_or_404(space_id)
-        director = make_director(space)
+    async def api_watch(request: Request, space_id: str):
         loop = asyncio.get_running_loop()
         shutdown_event: asyncio.Event = request.app.state.shutdown_event
 
@@ -513,6 +533,8 @@ def create_app(config_path: Path) -> FastAPI:
                     if await request.is_disconnected():
                         break
                     try:
+                        space = get_space_or_404(space_id)
+                        director = make_director(space)
                         results = await loop.run_in_executor(None, director.ingest_all)
                         for result in results:
                             yield {

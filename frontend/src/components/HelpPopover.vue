@@ -63,6 +63,18 @@
       <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Note: Matching is case-insensitive by default.</div>
     </div>
 
+    <div v-else-if="type === 'additional-saves-dirs'" style="font-size:12px;color:var(--text);line-height:1.5;display:flex;flex-direction:column;gap:8px">
+      <div>
+        For games split into multiple separate installations or episode releases (e.g. Episodes 1–8 in one folder, Episode 9+ in another).
+      </div>
+      <div>
+        <strong>How it works:</strong>
+        <div style="margin-top:4px;color:var(--text-dim)">
+          All configured saves folders are watched simultaneously. Save slots with matching names (e.g. <code>1-1-LT1.save</code>) across separate episode folders are automatically discovered and linked into the same flowchart tree, using the save file with the newest modification timestamp.
+        </div>
+      </div>
+    </div>
+
     <div v-else-if="type === 'milestone'" style="font-size:12px;color:var(--text);line-height:1.5;display:flex;flex-direction:column;gap:8px">
       <div>
         Milestone variables are game state variables used to align save points across separate subtrees onto shared vertical milestone columns.
@@ -98,6 +110,7 @@ const titles = {
   'route-target': '🎯 Route Target Rule Expression',
   regex: '🔍 Regex Filter Basics',
   milestone: 'Milestone Progress Variable Rules',
+  'additional-saves-dirs': '📁 Additional Saves Directories Help',
 };
 
 const title = computed(() => titles[props.type] || titles.regex);
