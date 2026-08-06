@@ -724,6 +724,14 @@ async function onSelectNode(sha) {
   bottomPanelOpen.value = true;
 }
 
+// Auto-select brings a newly arrived save point into view. Clicking a node
+// yourself does not pan, since you can already see what you clicked.
+async function selectAndCenterNode(sha) {
+  await onSelectNode(sha);
+  await nextTick();
+  graphCanvasRef.value && graphCanvasRef.value.centerGraphOnNode(sha);
+}
+
 function onAddNodeTag(sha, tag) {
   addNodeTag(selectedSpaceId.value, selectedSlot.value, sha, tag, reloadGraph);
 }
@@ -784,7 +792,7 @@ async function ingest() {
       showToast(`Committed ${res.count} new save point(s).`);
       const lastSha = res.results && res.results.length ? res.results[res.results.length - 1].sha : null;
       if (autoSelectOnAdd.value && lastSha) {
-        await onSelectNode(lastSha);
+        await selectAndCenterNode(lastSha);
       }
     }
   } catch (e) {
@@ -922,7 +930,7 @@ function startWatcher(spaceId) {
         showToast(`Auto-committed ${data.short}`);
         await reloadGraph();
         if (autoSelectOnAdd.value && data.sha) {
-          await onSelectNode(data.sha);
+          await selectAndCenterNode(data.sha);
         }
       } else {
         showToast(`Committed ${data.short} (${data.slot})`);

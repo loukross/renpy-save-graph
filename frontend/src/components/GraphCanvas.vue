@@ -23,6 +23,7 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue';
 import * as d3 from 'd3';
 import jsep from 'jsep';
+import { useGraphViewport } from '../composables/useGraphViewport';
 
 const props = defineProps({
   graphData: Object,
@@ -66,7 +67,8 @@ const svgRef = ref(null);
 let zoomBehavior = null;
 let svgSelection = null;
 let containerGroup = null;
-let savedZoom = null;
+const viewport = useGraphViewport();
+let positioned = false;
 let nodePosMap = new Map();
 let layoutMeta = { nodeW: 326, nodeH: 222 };
 let resizeObserver = null;
@@ -80,7 +82,9 @@ onMounted(() => {
     resizeObserver = new ResizeObserver(() => {
       const sw = canvasContainer.value?.clientWidth || 0;
       const sh = canvasContainer.value?.clientHeight || 0;
-      if (sw > 0 && sh > 0) {
+      // Only fit if we have never positioned this graph; resizing the pane
+      // otherwise keeps whatever view the user set, like any map.
+      if (sw > 0 && sh > 0 && !viewport.current) {
         fitGraphToScreen();
       }
     });
@@ -93,13 +97,6 @@ onUnmounted(() => {
     resizeObserver.disconnect();
   }
 });
-
-watch(
-  () => [props.spaceId, props.slotName, props.graphData],
-  () => {
-    savedZoom = null;
-  }
-);
 
 watch(
   () => [
@@ -133,6 +130,15 @@ function setupD3Svg() {
   svgSelection = d3.select(svgRef.value);
   svgSelection.selectAll('*').remove();
   containerGroup = svgSelection.append('g').attr('class', 'graph-container');
+
+  // Bound once: d3's zoom(selection) resets the stored transform to identity,
+  // so re-binding per render would clobber an in-flight centre-on-node move.
+  zoomBehavior = d3.zoom().on('zoom', (event) => {
+    containerGroup.attr('transform', event.transform);
+    viewport.remember(event.transform);
+    updateMilestoneGuidesViewport();
+  });
+  svgSelection.call(zoomBehavior);
 }
 
 // -- jsep AST evaluator (ported from ui.html's evalJsep) --------------------
@@ -196,8 +202,8 @@ function evalJsep(node, vars, diffInfo) {
 
 function updateMilestoneGuidesViewport() {
   const svgEl = svgRef.value;
-  if (!svgEl || !savedZoom) return;
-  const { k, y } = savedZoom;
+  if (!svgEl || !viewport.current) return;
+  const { k, y } = viewport.current;
   const h = svgEl.clientHeight || 600;
 
   const lineTopY = (38 - y) / k;
@@ -671,20 +677,17 @@ function renderGraph() {
 
   // Zoom / pan — decide the initial transform before this first render so
   // nodes don't start out cut off at the edge (ported from ui.html).
-  const zoom = d3.zoom().on('zoom', (event) => {
-    containerGroup.attr('transform', event.transform);
-    savedZoom = event.transform;
-    updateMilestoneGuidesViewport();
-  });
-  zoomBehavior = zoom;
-  svgSelection.call(zoom);
-
-  if (!savedZoom) {
-    fitGraphToScreen();
-  } else {
-    svgSelection.call(zoom.transform, savedZoom);
-    updateMilestoneGuidesViewport();
+  // Position only on the first draw; later renders leave the camera alone.
+  if (!positioned) {
+    positioned = true;
+    const plan = viewport.plan(props.spaceId, props.slotName);
+    if (plan.action === 'fit') {
+      fitGraphToScreen();
+    } else {
+      svgSelection.call(zoomBehavior.transform, plan.transform);
+    }
   }
+  updateMilestoneGuidesViewport();
 }
 
 // -- node decoration (ported from ui.html's _decorateNode) ------------------
@@ -814,7 +817,7 @@ function decorateNode(el, n, meta) {
     event.stopPropagation();
     const rectEl = el.querySelector('rect.node-bg') || el;
     const rr = rectEl.getBoundingClientRect();
-    const scale = savedZoom ? savedZoom.k : 1;
+    const scale = viewport.current ? viewport.current.k : 1;
     emit('edit-note', {
       sha,
       x: Math.round(rr.left),
@@ -849,14 +852,16 @@ function centerGraphOnNodes(shas) {
 
   const centerX = (minX + maxX) / 2;
   const centerY = (minY + maxY) / 2;
+  // Centring on one node keeps the zoom the user is already at and only pans;
+  // spanning several has to zoom out far enough to hold them all.
   const k = (shas.length === 1)
-    ? 1.0
+    ? (viewport.current ? viewport.current.k : 1.0)
     : Math.min(1.2, Math.max(0.4, Math.min((width - 100) / (maxX - minX || 1), (height - 100) / (maxY - minY || 1))));
   const tx = width / 2 - centerX * k;
   const ty = height / 2 - centerY * k;
 
   const newTransform = d3.zoomIdentity.translate(tx, ty).scale(k);
-  savedZoom = newTransform;
+  viewport.remember(newTransform);
   svgSelection.transition().duration(500).call(zoomBehavior.transform, newTransform);
 
   if (shas.length === 1) {
@@ -918,7 +923,7 @@ function fitGraphToScreen() {
   const ty = sh / 2 - centerY * scale;
 
   const transform = d3.zoomIdentity.translate(tx, ty).scale(scale);
-  savedZoom = transform;
+  viewport.remember(transform);
   if (svgSelection && zoomBehavior) {
     svgSelection.call(zoomBehavior.transform, transform);
   }
