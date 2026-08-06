@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ren'Py Save Graph</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.css"/>
+<script src="https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.js.iife.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -414,13 +416,9 @@ table.diff-table td.new { color: var(--green); }
     <nav>
       <button :class="{active: view==='spaces'}" @click="view='spaces'">Spaces</button>
       <button :class="{active: view==='graph'}" :disabled="!selectedSpaceId" @click="openGraph(selectedSpaceId)">Graph</button>
+      <button class="btn-secondary" style="font-size:12px;padding:3px 8px;margin-left:8px" @click="startInteractiveTour(true)">🎓 Tour</button>
+      <button class="btn-secondary" style="font-size:12px;padding:3px 8px;margin-left:4px" @click="aboutModal.open=true">ℹ About</button>
     </nav>
-    <select id="slot-select"
-            v-if="view==='graph' && availableSlots.length"
-            v-model="selectedSlot"
-            @change="loadGraph()">
-      <option v-for="s in availableSlots" :key="s" :value="s">{{ s }}</option>
-    </select>
     <span v-if="view==='graph' && graphData && graphData.head" class="head-info">HEAD {{ graphData.head.slice(0,7) }}</span>
   </div>
 
@@ -523,10 +521,17 @@ table.diff-table td.new { color: var(--green); }
   <!-- graph view -->
   <div v-show="view==='graph'" class="view" id="graph-view">
     <div id="graph-toolbar">
+      <select id="slot-select"
+              v-if="availableSlots.length"
+              v-model="selectedSlot"
+              @change="loadGraph()"
+              style="margin-right:6px">
+        <option v-for="s in availableSlots" :key="s" :value="s">{{ s }}</option>
+      </select>
       <button class="btn-secondary" @click="loadGraph" :disabled="graphLoading">↺ Refresh</button>
       <button class="btn-secondary" @click="ingest"    :disabled="graphLoading">⬇ Ingest</button>
       <span v-if="graphLoading" class="loading">Loading…</span>
-      <span v-else-if="watcher" style="font-size:13px;color:var(--green)">● Watching</span>
+      <span id="watching-indicator" v-else-if="watcher" style="font-size:13px;color:var(--green)">● Watching</span>
 
       <div style="position:relative;display:inline-block">
         <button class="btn-secondary" @click="toggleJumpMenu">🎯 Jump to…</button>
@@ -573,7 +578,7 @@ table.diff-table td.new { color: var(--green); }
             No slots found in saves directory
           </div>
         </div>
-        <div style="padding:10px 12px;border-top:1px solid var(--border);flex-shrink:0;background:var(--bg2)">
+        <div id="sort-filter-bar" style="padding:10px 12px;border-top:1px solid var(--border);flex-shrink:0;background:var(--bg2)">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
             <!-- Left Column: Sort Controls -->
             <div style="display:flex;flex-direction:column;gap:6px">
@@ -780,6 +785,44 @@ table.diff-table td.new { color: var(--green); }
   </div>
 
   <div class="toast" :class="{hidden: !toast}" v-text="toast"></div>
+
+  <!-- onboarding modal -->
+  <div v-if="onboardingModal.open" class="modal-overlay" @click.self="dismissOnboardingModal()">
+    <div class="modal" style="height:auto;max-width:480px;width:90%">
+      <div class="modal-header">
+        <span style="display:flex;align-items:center;gap:6px">🎓 Welcome to Ren'Py Save Graph</span>
+        <button @click="dismissOnboardingModal()">✕</button>
+      </div>
+      <div style="padding:16px 20px;font-size:14px;line-height:1.5;color:var(--text)">
+        <p>This tool organizes your visual novel choices into an interactive story flowchart using a <b>single dedicated save slot</b> in your Ren'Py game.</p>
+        <p style="margin-top:12px;color:var(--accent2);font-weight:600">Would you like a quick 1-minute interactive tour of how it works?</p>
+      </div>
+      <div class="modal-footer" style="justify-content:flex-end;gap:8px">
+        <button class="btn-secondary" @click="dismissOnboardingModal()">Skip for now</button>
+        <button class="btn-primary" @click="startInteractiveTour()">Start Interactive Tour →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- about modal -->
+  <div v-if="aboutModal.open" class="modal-overlay" @click.self="aboutModal.open=false">
+    <div class="modal" style="height:auto;max-width:440px;width:90%">
+      <div class="modal-header">
+        <span style="display:flex;align-items:center;gap:6px">ℹ About Ren'Py Save Graph</span>
+        <button @click="aboutModal.open=false">✕</button>
+      </div>
+      <div style="padding:16px 20px;font-size:14px;line-height:1.6;color:var(--text)">
+        <p>© Lucas J. Ross</p>
+        <a href="https://github.com/lucjross/renpy-save-graph" target="_blank" style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;color:var(--text);text-decoration:none">
+          <img src="/assets/Octicons-mark-github.svg" width="20" height="20" alt="GitHub" style="filter:invert(1)" />
+          <span>https://github.com/lucjross/renpy-save-graph</span>
+        </a>
+      </div>
+      <div class="modal-footer" style="justify-content:flex-end">
+        <button class="btn-secondary" @click="aboutModal.open=false">Close</button>
+      </div>
+    </div>
+  </div>
 
   <!-- remove space modal -->
   <div v-if="removeSpaceModal.open" class="modal-overlay" @click.self="removeSpaceModal.open=false">
@@ -989,6 +1032,8 @@ const app = createApp({
       inspectorFilter: '^[^_]',
       diffVarFilter: '^[^_]',
       autoSelectNewNodes: false,
+      onboardingModal: { open: false },
+      aboutModal: { open: false },
       helpPopover: { open: false, type: null, left: '0px', bottom: '0px' },
       bottomPanel: { open: false },
       watcher: null,
@@ -1076,6 +1121,9 @@ const app = createApp({
     if (this.spaces.length) {
       this.selectedSpaceId = this.spaces[0].id;
       this.onSpaceSelected();
+    }
+    if (!localStorage.getItem('renpy_save_graph_tour_seen')) {
+      setTimeout(() => { this.onboardingModal.open = true; }, 500);
     }
     window.addEventListener('click', (e) => {
       if (!e.target.closest('.help-popover') && !e.target.closest('.help-btn')) {
@@ -2124,6 +2172,181 @@ const app = createApp({
         this.watcher.close();
         this.watcher = null;
       }
+    },
+
+    dismissOnboardingModal() {
+      this.onboardingModal.open = false;
+      localStorage.setItem('renpy_save_graph_tour_seen', 'true');
+    },
+
+    async startInteractiveTour(force = false) {
+      this.onboardingModal.open = false;
+      localStorage.setItem('renpy_save_graph_tour_seen', 'true');
+
+      if (typeof driver === 'undefined' || !driver.js || !driver.js.driver) {
+        this.showToast('Tour library loading…');
+        return;
+      }
+
+      this.view = 'spaces';
+      const exSpace = this.spaces.find(s => s.id === 'example-space') || this.spaces[0];
+      if (exSpace) {
+        this.selectedSpaceId = exSpace.id;
+        this.onSpaceSelected();
+      }
+
+      const self = this;
+      const driverObj = window.driver.js.driver({
+        showProgress: true,
+        animate: true,
+        steps: [
+          {
+            element: '#header h1',
+            popover: {
+              title: 'Welcome to Ren\'Py Save Graph! 🎓',
+              description: 'This tool organizes your visual novel choices into an interactive story flowchart using a single dedicated save slot in your Ren\'Py game.',
+              side: 'bottom',
+              align: 'start'
+            }
+          },
+          {
+            element: '#spaces-view',
+            popover: {
+              title: 'Game Spaces',
+              description: 'Game Spaces represent your visual novel playthroughs. We\'ve initialized an <b>Example Game Space</b> for you to explore.',
+              side: 'bottom',
+              align: 'start',
+              onNextClick: async () => {
+                if (self.selectedSpaceId) {
+                  await self.openGraph(self.selectedSpaceId);
+                }
+                driverObj.moveNext();
+              }
+            }
+          },
+          {
+            element: '#graph-canvas',
+            popover: {
+              title: 'Interactive Flowchart Canvas',
+              description: 'This is your story flowchart! It displays decision points, story branches, and active save heads. Click any node to inspect it.',
+              side: 'right',
+              align: 'center'
+            }
+          },
+          {
+            element: '#slot-select',
+            popover: {
+              title: 'Single Dedicated Save Slot',
+              description: 'Select a slot with a save - for example, 1-1-LT1 is the first slot on the first page.',
+              side: 'bottom',
+              align: 'start'
+            }
+          },
+          {
+            element: '#watching-indicator',
+            popover: {
+              title: 'Game Save Watcher',
+              description: 'After you save to the selected slot in the game, a new node is automatically added here.',
+              side: 'bottom',
+              align: 'start'
+            }
+          },
+          {
+            element: '#graph-canvas button',
+            popover: {
+              title: 'Auto-select on Add',
+              description: 'Enable \"⚡ Auto-select on add\" to automatically select and inspect new save points the instant you save in-game.',
+              side: 'left',
+              align: 'start',
+              onNextClick: async () => {
+                if (self.graphData && self.graphData.nodes) {
+                  const nodeC = self.graphData.nodes.find(n => n.subject && (n.subject.includes('mountain') || n.subject.includes('castle')));
+                  if (nodeC) {
+                    await self.selectNode(nodeC.sha);
+                  }
+                }
+                driverObj.moveNext();
+              }
+            }
+          },
+          {
+            element: '#diff-pane',
+            popover: {
+              title: 'Diff View',
+              description: 'Selecting a node shows its choice differences side-by-side compared to its parent node.',
+              side: 'left',
+              align: 'center',
+              onHighlightStarted: async () => {
+                if (self.graphData && self.graphData.nodes) {
+                  const nodeC = self.graphData.nodes.find(n => n.subject && (n.subject.includes('mountain') || n.subject.includes('castle')));
+                  if (nodeC) {
+                    await self.selectNode(nodeC.sha);
+                  }
+                }
+              },
+              onNextClick: async () => {
+                self.bottomPanel.open = true;
+                driverObj.moveNext();
+              }
+            }
+          },
+          {
+            element: '#bottom-panel',
+            popover: {
+              title: 'Variable Inspector',
+              description: 'Inspect all recorded Ren\'Py game variables, stats, flags, and inventory items for any save point.',
+              side: 'top',
+              align: 'center'
+            }
+          },
+          {
+            element: '#sort-filter-bar',
+            popover: {
+              title: 'Sort & Filter',
+              description: 'Filter nodes using JSEP expressions like \"gold >= 100\", or re-order branches chronologically or by choice differences.',
+              side: 'top',
+              align: 'start',
+              onNextClick: async () => {
+                if (self.graphData && self.graphData.nodes) {
+                  const nodeA = self.graphData.nodes.find(n => n.parents && n.parents.length === 0);
+                  if (nodeA) {
+                    await self.selectNode(nodeA.sha);
+                  }
+                }
+                driverObj.moveNext();
+              }
+            }
+          },
+          {
+            element: '#restore-bar',
+            popover: {
+              title: 'Restore to Game',
+              description: 'Click \"Restore to Game\" on any node (other than the current) to copy that save point back into your single slot. Load that slot in-game to branch off and make different choices.',
+              side: 'top',
+              align: 'center',
+              onHighlightStarted: async () => {
+                if (self.graphData && self.graphData.nodes) {
+                  const nodeA = self.graphData.nodes.find(n => n.parents && n.parents.length === 0);
+                  if (nodeA) {
+                    await self.selectNode(nodeA.sha);
+                  }
+                }
+              }
+            }
+          },
+          {
+            element: '#header h1',
+            popover: {
+              title: 'Enjoy! 🎉',
+              description: 'If you have any suggestions, feature requests, or bug reports, please visit the GitHub Issues page.',
+              side: 'bottom',
+              align: 'start'
+            }
+          }
+        ]
+      });
+
+      driverObj.drive();
     },
 
     showToast(msg) {

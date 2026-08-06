@@ -17,5 +17,3 @@ venv/
 # do not commit real saves into this (the app's source) repo.
 /samples/
 /scratch/
-*.save
-!docs/**/*.save

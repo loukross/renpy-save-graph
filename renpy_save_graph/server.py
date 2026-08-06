@@ -60,6 +60,8 @@ def create_app(config_path: Path) -> FastAPI:
     html = _HTML_PATH.read_text(encoding="utf-8")
 
     def load() -> AppConfig:
+        from .examples.init_example import ensure_example_space
+        ensure_example_space(config_path)
         return AppConfig.load(config_path)
 
     def save(cfg: AppConfig) -> None:
@@ -91,6 +93,15 @@ def create_app(config_path: Path) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
         return html
+
+    @app.get("/assets/{filename}")
+    def api_asset(filename: str):
+        from fastapi.responses import FileResponse
+        asset_path = Path(__file__).parent / "assets" / filename
+        if not asset_path.exists() or not asset_path.is_file():
+            raise HTTPException(404, f"asset {filename!r} not found")
+        media_type = "image/svg+xml" if filename.endswith(".svg") else "application/octet-stream"
+        return FileResponse(asset_path, media_type=media_type)
 
     # -- config --------------------------------------------------------------
 

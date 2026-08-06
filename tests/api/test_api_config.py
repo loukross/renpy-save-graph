@@ -11,5 +11,6 @@ def test_api_config(test_client: TestClient):
     config_data = resp.json()
     assert "spaces" in config_data
     spaces = config_data["spaces"]
-    assert len(spaces) == 1
-    assert spaces[0]["id"] == "test-space-id"
+    assert len(spaces) >= 1
+    space_ids = [s["id"] for s in spaces]
+    assert "test-space-id" in space_ids

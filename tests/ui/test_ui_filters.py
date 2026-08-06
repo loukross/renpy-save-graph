@@ -27,6 +27,11 @@ def test_ui_decoupled_regex_filters(page, ui_server_url):
     )
 
     page.route(
+        "**/api/spaces/*/slots",
+        lambda route: route.fulfill(status=200, json={"slots": ["1-1-LT1"]}),
+    )
+
+    page.route(
         "**/api/spaces/*/slots/*/graph*",
         lambda route: route.fulfill(
             status=200,
@@ -62,6 +67,9 @@ def test_ui_decoupled_regex_filters(page, ui_server_url):
 
     page.goto(ui_server_url)
     page.wait_for_selector("#app")
+
+    page.click("button:has-text('Graph')")
+    page.wait_for_selector("#diff-pane")
 
     # Locate inputs
     inputs = page.locator("input[placeholder='e.g. ^karma|money$']")
