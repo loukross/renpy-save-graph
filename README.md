@@ -42,6 +42,9 @@ renpy-save-graph
 
 **Ren'Py Save Graph** introduces a streamlined way to play choice-heavy Ren'Py visual novels. Instead of juggling dozens of manual save slots or losing track of decision points, you operate using a **single dedicated save slot** while the app manages your full story flowchart in the background.
 
+### 🎬 Demo Video
+[![Ren'Py Save Graph Demo](https://img.youtube.com/vi/i0_DoTWxbf8/maxresdefault.jpg)](https://www.youtube.com/watch?v=i0_DoTWxbf8)
+
 ### 1. The Single Dedicated Slot Workflow
 - The app runs in parallel with the Ren'Py game.
 - Create and select a _Gamespace_ targeting one game installation's saves folder, which is `game/saves/` from the game's root (.exe-containing) folder.
