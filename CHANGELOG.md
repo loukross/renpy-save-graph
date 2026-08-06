@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Miscellaneous
+
+- Add automated CHANGELOG.md generation and commit-msg hook (f7792e2)
+
 ### Other
 
 - Initial release: Ren'Py Save Graph (623e3c0)
