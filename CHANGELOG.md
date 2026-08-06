@@ -16,6 +16,8 @@ All notable changes to this project are documented in this file.
 ### Features
 
 - Add multi-alignment popover box and game-space tag management (14cb898)
+- Stack multi-item milestone guideline labels vertically (2108684)
+- Add example space reset API and interactive tour node tag step (44626cf)
 
 ### Miscellaneous
 
