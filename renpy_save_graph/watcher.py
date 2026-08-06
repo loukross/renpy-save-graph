@@ -178,13 +178,16 @@ class Director:
             info = self._lib.branch_from(commitish, new_branch)
             target_branch = new_branch
         else:
-            active = self._active_branch(slot_name)
             try:
-                self._lib._git("checkout", "-q", "-B", active, commitish)
-                info = self._lib.head()
+                self._lib._git("rev-parse", "--verify", f"refs/heads/{commitish}", capture=True)
+                info = self._lib.checkout(commitish)
+                target_branch = commitish
             except GitError:
                 info = self._lib.checkout(commitish)
-            target_branch = active
+                target_branch = commitish
+
+        if info.branch in ("(detached)", ""):
+            info = CommitInfo(sha=info.sha, short=info.short, branch=slot_name, subject=info.subject, when=info.when)
 
         stamp_name = target_branch if target_branch and len(target_branch) < 40 else slot_name
         self._lib.materialize(self.slot_path(slot_name), stamp=True, stamp_name=stamp_name)

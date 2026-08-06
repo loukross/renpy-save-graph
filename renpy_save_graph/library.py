@@ -201,19 +201,9 @@ class Library:
         return self._dag(f"{root}..{branch}", exclude_parent=root)
 
     def fork_branches_of(self, slot_branch: str, all_slot_branches: list[str]) -> list[str]:
-        """Non-slot branches that share history with slot_branch beyond the root commit."""
-        root = self._root_sha()
-        slot_set = set(all_slot_branches) | {"_root"}
-        non_slot = [b for b in self._all_branches() if b not in slot_set]
-        result = []
-        for b in non_slot:
-            try:
-                merge_base = self._git("merge-base", b, slot_branch, capture=True)
-                if merge_base != root:
-                    result.append(b)
-            except GitError:
-                pass
-        return result
+        """All fork branches belonging to slot_branch (named slot_branch-...)."""
+        prefix = f"{slot_branch}-"
+        return [b for b in self._all_branches() if b.startswith(prefix)]
 
     def _all_branches(self) -> list[str]:
         try:
@@ -226,7 +216,8 @@ class Library:
         """Commits for this slot and all its fork branches."""
         root = self._root_sha()
         forks = self.fork_branches_of(slot_branch, all_slot_branches)
-        return self._dag(slot_branch, *forks, f"^{root}", exclude_parent=root)
+        all_branches = [b for b in [slot_branch] + forks if b]
+        return self._dag(*all_branches, f"^{root}", exclude_parent=root)
 
     def _dag(self, *rev_args: str, exclude_parent: str = "") -> list[NodeInfo]:
         try:

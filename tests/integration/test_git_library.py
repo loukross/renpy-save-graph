@@ -63,3 +63,35 @@ def test_git_node_deletion_reparent(tmp_workspace):
     nodes = director.library.dag()
     remaining_shas = {n.sha for n in nodes}
     assert sha2 not in remaining_shas
+
+
+@pytest.mark.integration
+def test_git_multiple_restores_preserve_history(tmp_workspace):
+    space = tmp_workspace["space"]
+    slot_file = tmp_workspace["slot_file"]
+    director = Director(space)
+
+    # Ingest 2nd and 3rd commits
+    slot_file.write_bytes(create_mock_save_zip({"money": 200}, "ch1"))
+    sha2 = director.ingest("1-1-LT1", note="ch1").commit.sha
+
+    slot_file.write_bytes(create_mock_save_zip({"money": 300}, "ch2"))
+    sha3 = director.ingest("1-1-LT1", note="ch2").commit.sha
+
+    # 1st Restore to sha2 and save ch2b
+    director.switch_to("1-1-LT1", sha2)
+    slot_file.write_bytes(create_mock_save_zip({"money": 250}, "ch2b"))
+    sha2b = director.ingest("1-1-LT1", note="ch2b").commit.sha
+
+    # 2nd Restore to sha2 and save ch2c
+    director.switch_to("1-1-LT1", sha2)
+    slot_file.write_bytes(create_mock_save_zip({"money": 270}, "ch2c"))
+    sha2c = director.ingest("1-1-LT1", note="ch2c").commit.sha
+
+    # Verify all commits (sha2, sha3, sha2b, sha2c) exist in slot DAG
+    nodes = director.library.dag_for_slot("1-1-LT1", ["1-1-LT1"])
+    shas = {n.sha for n in nodes}
+    assert sha2 in shas
+    assert sha3 in shas
+    assert sha2b in shas
+    assert sha2c in shas
