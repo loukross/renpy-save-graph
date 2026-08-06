@@ -1,6 +1,6 @@
 # Ren'Py Save Graph
 
-[![Integration Tests](https://github.com/lucjross/renpy-save-graph/actions/workflows/test.yml/badge.svg)](https://github.com/lucjross/renpy-save-graph/actions/workflows/test.yml)
+[![Integration Tests](https://github.com/loukross/renpy-save-graph/actions/workflows/test.yml/badge.svg)](https://github.com/loukross/renpy-save-graph/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 
@@ -74,7 +74,7 @@ The launcher script installs the Python package, builds the web UI (`npm install
 ### 1. Environment Setup
 ```bash
 # Clone repository
-git clone https://github.com/lucjross/renpy-save-graph.git
+git clone https://github.com/loukross/renpy-save-graph.git
 cd renpy-save-graph
 
 # Install dependencies via uv or pip
