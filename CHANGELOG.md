@@ -8,6 +8,7 @@ All notable changes to this project are documented in this file.
 
 - Remove redundant _DAG_CACHE memory layer (09b3bbf)
 - Prevent branch overwriting on restore and log all slot fork branches (7f541d5)
+- Use a PAT for the changelog PR to avoid required workflow approval (fd0cf11)
 
 ### Documentation
 
@@ -35,6 +36,7 @@ All notable changes to this project are documented in this file.
 - Update README with save slot and quicksave details (3b9cfa0)
 - Replace monotonic_vars with a lineage validity check expression (793637c)
 - Merge branch 'main' of github.com:lucjross/renpy-save-graph (16d97e4)
+- Merge branch 'main' of github.com:lucjross/renpy-save-graph (4ec3e83)
 
 ### Refactor
 
