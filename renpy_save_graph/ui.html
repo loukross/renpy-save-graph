@@ -493,6 +493,29 @@ table.diff-table td.new { color: var(--green); }
                      placeholder="e.g. delta('money') &gt;= 0"
                      style="font-family:monospace;font-size:12px" />
             </div>
+            <div class="field" id="field-milestone-vars">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                <label style="margin-bottom:0">Milestone progress variables <span class="optional">(optional)</span></label>
+                <button class="help-btn" @click.stop="toggleHelp('milestone', $event)" title="Milestone Progress Variable Rules Help">?</button>
+              </div>
+              <div style="display:flex;gap:6px;margin-bottom:6px">
+                <input v-model="spaceForm.newMilestoneInput"
+                       placeholder="Add variable name (e.g. currentEpisode)"
+                       @keydown.enter.prevent="addMilestoneVar"
+                       style="font-family:monospace;font-size:12px;flex:1" />
+                <button class="btn-secondary" @click.prevent="addMilestoneVar" style="font-size:12px;flex-shrink:0">+ Add</button>
+              </div>
+              <div v-if="spaceForm.milestone_vars && spaceForm.milestone_vars.length"
+                   style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+                <div v-for="(v, idx) in spaceForm.milestone_vars" :key="idx"
+                     style="display:inline-flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:3px 10px;font-family:monospace;font-size:12px;color:var(--accent2)">
+                  <span>{{ v }}</span>
+                  <button @click.prevent="removeMilestoneVar(idx)"
+                          style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;font-weight:bold;padding:0;line-height:1"
+                          title="Remove variable">×</button>
+                </div>
+              </div>
+            </div>
           </details>
 
           <div v-if="spaceForm.error" class="error">{{ spaceForm.error }}</div>
@@ -581,8 +604,78 @@ table.diff-table td.new { color: var(--green); }
           </div>
         </div>
         <div id="sort-filter-bar" style="padding:10px 12px;border-top:1px solid var(--border);flex-shrink:0;background:var(--bg2)">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-            <!-- Left Column: Sort Controls -->
+          <div style="display:grid;grid-template-columns:auto 1fr 1fr;gap:16px;align-items:start">
+            <!-- Column 1: Horizontal Alignment -->
+            <div style="display:flex;flex-direction:column;gap:6px;position:relative">
+              <div style="display:flex;align-items:center;gap:6px">
+                <label style="font-size:12px;font-weight:600;color:var(--text-dim)">📐 Horizontal Alignment</label>
+                <button class="help-btn" @click.stop="toggleHelp('milestone', $event)" title="Milestone Progress Variable Rules Help">?</button>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <button id="btn-alignment-popover" class="btn-secondary" style="width:175px;padding:4px 10px;font-size:13px;white-space:nowrap;display:flex;align-items:center;justify-content:space-between"
+                        :style="{ borderColor: selectedAlignments.length ? 'var(--accent)' : 'var(--border)', color: selectedAlignments.length ? 'var(--accent2)' : 'var(--text)' }"
+                        @click.stop="showAlignmentPopover = !showAlignmentPopover">
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ alignmentButtonLabel }}</span>
+                  <span style="font-size:10px;flex-shrink:0;margin-left:4px">▼</span>
+                </button>
+                <button class="btn-secondary" style="padding:3px 6px;font-size:12px;white-space:nowrap"
+                        :style="{ color: showMilestoneGuides ? 'var(--accent2)' : 'var(--text-dim)', borderColor: showMilestoneGuides ? 'var(--accent)' : 'var(--border)' }"
+                        title="Toggle Milestone Column Guidelines"
+                        @click="showMilestoneGuides = !showMilestoneGuides; renderGraph()">
+                  Guides
+                </button>
+              </div>
+
+              <!-- Multi-Alignment Popover Box -->
+              <div v-if="showAlignmentPopover" @click.stop
+                   style="position:absolute;bottom:100%;left:0;margin-bottom:8px;z-index:999;width:320px;max-height:400px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;box-shadow:0 -8px 24px rgba(0,0,0,0.4);display:flex;flex-direction:column;gap:12px">
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                  <span style="font-weight:700;font-size:13px;color:var(--text)">Horizontal Alignment Options</span>
+                  <button class="btn-secondary" style="padding:2px 6px;font-size:11px" @click="showAlignmentPopover = false">✕</button>
+                </div>
+
+                <!-- Category 1: Story Variables -->
+                <div v-if="spaceMilestoneVars.length" style="display:flex;flex-direction:column;gap:6px">
+                  <span style="font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase">Story Variables</span>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px">
+                    <button v-for="v in spaceMilestoneVars" :key="v"
+                            class="btn-secondary" style="padding:4px 8px;font-size:12px;border-radius:12px"
+                            :style="{ background: isAlignmentSelected(v) ? 'var(--accent)' : 'var(--bg2)', color: isAlignmentSelected(v) ? '#fff' : 'var(--text)', borderColor: isAlignmentSelected(v) ? 'var(--accent)' : 'var(--border)' }"
+                            @click="toggleAlignment(v)">
+                      {{ isAlignmentSelected(v) ? '✓ ' : '' }}{{ v }}
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Category 2: Tags -->
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <span style="font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase">Game Space Tags</span>
+                  <div v-if="allSpaceTags.length" style="display:flex;flex-wrap:wrap;gap:6px">
+                    <button v-for="t in allSpaceTags" :key="t"
+                            class="btn-secondary" style="padding:4px 8px;font-size:12px;border-radius:12px"
+                            :style="{ background: isAlignmentSelected('#' + t) ? '#a855f7' : 'var(--bg2)', color: isAlignmentSelected('#' + t) ? '#fff' : 'var(--text)', borderColor: isAlignmentSelected('#' + t) ? '#a855f7' : 'var(--border)' }"
+                            @click="toggleAlignment('#' + t)">
+                      {{ isAlignmentSelected('#' + t) ? '✓ ' : '' }}#{{ t }}
+                    </button>
+                  </div>
+                  <div v-else style="font-size:12px;color:var(--text-dim);font-style:italic">
+                    No tags created yet. Use +tag on any save node to add tags.
+                  </div>
+                </div>
+
+                <!-- Footer Actions -->
+                <div style="display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px">
+                  <button class="btn-secondary" style="padding:3px 8px;font-size:11px;color:var(--text-dim)" @click="clearAlignments">
+                    ↺ Natural Depth (Reset)
+                  </button>
+                  <button class="btn-primary" style="padding:3px 10px;font-size:12px" @click="showAlignmentPopover = false">
+                    Apply
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Column 2: Sort Controls -->
             <div style="display:flex;flex-direction:column;gap:6px">
               <label style="font-size:12px;font-weight:600;color:var(--text-dim)">📅 Sort Controls</label>
               <div style="display:flex;align-items:center;gap:6px">
@@ -983,6 +1076,22 @@ table.diff-table td.new { color: var(--green); }
       <div><code>^[^_]</code> — Excludes system vars starting with <code>_</code></div>
       <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Note: Matching is case-insensitive by default.</div>
     </div>
+
+    <!-- Milestone Progress Variable Help Content -->
+    <div v-else-if="helpPopover.type === 'milestone'" style="font-size:12px;color:var(--text);line-height:1.5;display:flex;flex-direction:column;gap:8px">
+      <div>
+        Milestone variables are game state variables used to align save points across separate subtrees onto shared vertical milestone columns.
+      </div>
+      <div style="background:var(--bg3);padding:8px;border-radius:4px;border-left:3px solid var(--gold)">
+        <strong>Rule for Story Progress Variables:</strong>
+        <div style="margin-top:4px;color:var(--text-dim)">
+          Milestone variables must represent <strong>monotonically progressing story markers</strong> (e.g. <code>currentEpisode = 1, 2, 3...</code> or <code>chapter</code>).
+        </div>
+        <div style="margin-top:4px;color:var(--red-val)">
+          Variables that fluctuate, decrease, or revert to previous values (like <code>gold</code>, <code>health</code>, or temporary state flags) should <strong>not</strong> be used, as non-monotonic values produce unpredictable layout jumps and branch misalignments.
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1008,6 +1117,8 @@ const app = createApp({
         node_hint_format: '',
         slot_exclude: '',
         lineage_validity_expr: '',
+        milestone_vars: [],
+        newMilestoneInput: '',
         saving: false,
         error: '',
         isNew: false,
@@ -1022,6 +1133,12 @@ const app = createApp({
       noteOverlay: { open: false, sha: null, x: 0, y: 0, scale: 1 },
       graphBaseSort: 'chrono',
       graphBaseDir: 'asc',
+      graphAlignMetric: 'depth',
+      selectedAlignments: [],
+      showAlignmentPopover: false,
+      nodeTags: {},
+      allSpaceTags: [],
+      showMilestoneGuides: true,
       graphOrderByExpr: '',
       jumpMenuOpen: false,
       jumpDatePreset: 'all',
@@ -1080,8 +1197,13 @@ const app = createApp({
         filter: '🔍 Graph Filter Expressions',
         lineage: '⚠ Lineage Validity Check Expression',
         regex: '🔍 Regex Filter Basics',
+        milestone: 'Milestone Progress Variable Rules',
       };
       return titles[this.helpPopover.type] || titles.regex;
+    },
+    configuredMilestoneVars() {
+      const s = this.spaces.find(x => x.id === this.selectedSpaceId);
+      return (s && s.milestone_vars) ? s.milestone_vars : [];
     },
     filteredDiffChanges() {
       if (!this.diffData) return [];
@@ -1124,6 +1246,20 @@ const app = createApp({
       };
       walk(this.picker.nodes, 0);
       return result;
+    },
+    alignmentButtonLabel() {
+      if (!this.selectedAlignments || !this.selectedAlignments.length) {
+        return 'None (tree depth)';
+      }
+      if (this.selectedAlignments.length === 1) {
+        const item = this.selectedAlignments[0];
+        return item === 'note' ? 'Custom Notes' : item;
+      }
+      return `${this.selectedAlignments.length} Active Alignments`;
+    },
+    spaceMilestoneVars() {
+      const space = this.spaces.find(s => s.id === this.selectedSpaceId);
+      return space?.milestone_vars || [];
     },
   },
 
@@ -1171,6 +1307,20 @@ const app = createApp({
     },
 
     // -- space form --
+    addMilestoneVar() {
+      const v = (this.spaceForm.newMilestoneInput || '').trim();
+      if (!v) return;
+      if (!this.spaceForm.milestone_vars) this.spaceForm.milestone_vars = [];
+      if (!this.spaceForm.milestone_vars.includes(v)) {
+        this.spaceForm.milestone_vars.push(v);
+      }
+      this.spaceForm.newMilestoneInput = '';
+    },
+    removeMilestoneVar(idx) {
+      if (this.spaceForm.milestone_vars) {
+        this.spaceForm.milestone_vars.splice(idx, 1);
+      }
+    },
     onSpaceSelected() {
       const space = this.spaces.find(s => s.id === this.selectedSpaceId);
       if (!space) return;
@@ -1181,6 +1331,8 @@ const app = createApp({
         node_hint_format: space.node_hint_format,
         slot_exclude: space.slot_exclude,
         lineage_validity_expr: space.lineage_validity_expr || '',
+        milestone_vars: [...(space.milestone_vars || [])],
+        newMilestoneInput: '',
         saving: false,
         error: '',
         isNew: false,
@@ -1194,6 +1346,8 @@ const app = createApp({
         node_hint_format: '{_last_say_who}: {_last_say_what}',
         slot_exclude: '',
         lineage_validity_expr: '',
+        milestone_vars: [],
+        newMilestoneInput: '',
         saving: false, error: '', isNew: true,
       };
     },
@@ -1212,6 +1366,7 @@ const app = createApp({
           library_path: this.spaceForm.library_path,
           node_hint_format: this.spaceForm.node_hint_format,
           slot_exclude: this.spaceForm.slot_exclude,
+          milestone_vars: this.spaceForm.milestone_vars || [],
         };
         if (this.spaceForm.lineage_validity_expr) {
           body.lineage_validity_expr = this.spaceForm.lineage_validity_expr;
@@ -1251,6 +1406,7 @@ const app = createApp({
             node_hint_format: this.spaceForm.node_hint_format,
             slot_exclude: this.spaceForm.slot_exclude,
             lineage_validity_expr: this.spaceForm.lineage_validity_expr,
+            milestone_vars: this.spaceForm.milestone_vars || [],
           }),
         });
         if (!resp.ok) throw new Error((await resp.json().catch(() => ({detail: resp.statusText}))).detail);
@@ -1340,6 +1496,7 @@ const app = createApp({
         this.graphData = await resp.json();
         this.nodeThumbnails = shotResp || {};
         await this.loadAllStates();
+        await this.loadTags();
         await nextTick();
         this.renderGraph();
 
@@ -1478,6 +1635,142 @@ const app = createApp({
       }
     },
 
+    getNodeEquivalenceKey(node, vars) {
+      if (!node) return null;
+      if (!this.selectedAlignments || !this.selectedAlignments.length) return null;
+
+      const sha = node.sha;
+      const parentSha = node.parents && node.parents[0];
+      const parentVars = parentSha ? (this.nodeStates[parentSha] || null) : null;
+      const nodeTags = (this.nodeTags && this.nodeTags[sha]) || [];
+
+      const parts = [];
+
+      for (const item of this.selectedAlignments) {
+        if (item.startsWith('#')) {
+          const rawTag = item.slice(1).toLowerCase();
+          if (nodeTags.map(t => t.toLowerCase()).includes(rawTag)) {
+            parts.push('#' + rawTag);
+          }
+        } else {
+          // Story variable
+          if (vars && vars[item] != null && String(vars[item]).trim() !== '') {
+            const val = vars[item];
+            const pVal = parentVars ? parentVars[item] : undefined;
+            const isIncrease = !parentVars || pVal === undefined || pVal !== val;
+            if (isIncrease) {
+              parts.push(`${item}: ${val}`);
+            }
+          }
+        }
+      }
+
+      return parts.length ? parts.join(' | ') : null;
+    },
+
+    updateMilestoneGuidesViewport() {
+      const svgEl = this.$refs.graphSvg;
+      if (!svgEl || !this._savedZoom) return;
+      const { k, y } = this._savedZoom;
+      const h = svgEl.clientHeight || 600;
+
+      const lineTopY = (38 - y) / k;
+      const lineBottomY = (h - 38 - y) / k;
+
+      const labelTopY = (18 - y) / k;
+      const labelBottomY = (h - 18 - y) / k;
+
+      const fontSize = (11 / k) + 'px';
+      const strokeWidth = 2.0 / k;
+      const dashArray = `${6 / k},${4 / k}`;
+
+      const guideG = d3.select(svgEl).select('g.milestone-guides');
+      if (guideG.empty()) return;
+
+      guideG.selectAll('line.guide-line')
+        .attr('y1', lineTopY)
+        .attr('y2', lineBottomY)
+        .attr('stroke-width', strokeWidth)
+        .attr('stroke-dasharray', dashArray);
+
+      guideG.selectAll('text.guide-label-top')
+        .attr('y', labelTopY)
+        .attr('font-size', fontSize);
+
+      guideG.selectAll('text.guide-label-bottom')
+        .attr('y', labelBottomY)
+        .attr('font-size', fontSize);
+    },
+
+    isAlignmentSelected(item) {
+      return this.selectedAlignments.includes(item);
+    },
+
+    toggleAlignment(item) {
+      const idx = this.selectedAlignments.indexOf(item);
+      if (idx === -1) {
+        this.selectedAlignments.push(item);
+      } else {
+        this.selectedAlignments.splice(idx, 1);
+      }
+      this.onAlignMetricChange();
+    },
+
+    clearAlignments() {
+      this.selectedAlignments = [];
+      this.showAlignmentPopover = false;
+      this.onAlignMetricChange();
+    },
+
+    async onAlignMetricChange() {
+      if (this.selectedAlignments.length) {
+        await this.loadAllStates();
+        await this.loadTags();
+      }
+      this.renderGraph();
+    },
+
+    async loadTags() {
+      if (!this.selectedSpaceId || !this.selectedSlot) return;
+      try {
+        const resp = await fetch(`/api/spaces/${this.selectedSpaceId}/slots/${this.selectedSlot}/tags`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        this.nodeTags = data.tags || {};
+        this.allSpaceTags = data.all_tags || [];
+      } catch (e) {
+        console.error('Error loading tags:', e);
+      }
+    },
+
+    async addNodeTag(sha, tag) {
+      if (!tag || !this.selectedSpaceId || !this.selectedSlot) return;
+      try {
+        await fetch(`/api/spaces/${this.selectedSpaceId}/slots/${this.selectedSlot}/nodes/${sha}/tags`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tag }),
+        });
+        await this.loadTags();
+        this.renderGraph();
+      } catch (e) {
+        console.error('Error adding tag:', e);
+      }
+    },
+
+    async removeNodeTag(sha, tag) {
+      if (!tag || !this.selectedSpaceId || !this.selectedSlot) return;
+      try {
+        await fetch(`/api/spaces/${this.selectedSpaceId}/slots/${this.selectedSlot}/nodes/${sha}/tags/${encodeURIComponent(tag)}`, {
+          method: 'DELETE',
+        });
+        await this.loadTags();
+        this.renderGraph();
+      } catch (e) {
+        console.error('Error removing tag:', e);
+      }
+    },
+
     renderGraph() {
       const svgEl = this.$refs.graphSvg;
       if (!svgEl) return;
@@ -1549,23 +1842,112 @@ const app = createApp({
       for (const arr of childrenOf.values()) arr.sort(siblingCompare);
       roots.sort(siblingCompare);
 
-      function build(n) {
-        return { sha: n.sha, node: n, children: (childrenOf.get(n.sha) || []).map(build) };
-      }
-      const synthetic = roots.length !== 1;
-      const rootData = synthetic
-        ? { sha: '__synthetic_root__', node: null, children: roots.map(build) }
-        : build(roots[0]);
+      const self = this;
+      let rootData;
 
+      if (!this.selectedAlignments || !this.selectedAlignments.length) {
+        function buildSimple(n) {
+          return { sha: n.sha, node: n, children: (childrenOf.get(n.sha) || []).map(buildSimple) };
+        }
+        const synthetic = roots.length !== 1;
+        rootData = synthetic
+          ? { sha: '__synthetic_root__', node: null, children: roots.map(buildSimple) }
+          : buildSimple(roots[0]);
+      } else {
+        // Pre-layout milestone padding pass
+        const shaKeyMap = new Map();
+        const rawDepths = new Map();
+
+        function computeRawDepth(n, depth) {
+          rawDepths.set(n.sha, depth);
+          const key = self.getNodeEquivalenceKey(n, self.nodeStates[n.sha] || {});
+          if (key) shaKeyMap.set(n.sha, key);
+          const children = childrenOf.get(n.sha) || [];
+          children.forEach(c => computeRawDepth(c, depth + 1));
+        }
+        roots.forEach(r => computeRawDepth(r, 1));
+
+        const keyDepthsMap = new Map();
+        shaKeyMap.forEach((key, sha) => {
+          if (!keyDepthsMap.has(key)) keyDepthsMap.set(key, []);
+          keyDepthsMap.get(key).push(rawDepths.get(sha));
+        });
+
+        const keyInfo = [];
+        keyDepthsMap.forEach((depths, key) => {
+          const avgDepth = depths.reduce((a, b) => a + b, 0) / depths.length;
+          const minDepth = Math.min(...depths);
+          keyInfo.push({ key, avgDepth, minDepth });
+        });
+
+        keyInfo.sort((a, b) => {
+          if (a.minDepth !== b.minDepth) return a.minDepth - b.minDepth;
+          if (a.avgDepth !== b.avgDepth) return a.avgDepth - b.avgDepth;
+          return a.key.localeCompare(b.key, undefined, { numeric: true, sensitivity: 'base' });
+        });
+
+        const milestoneTargetDepths = new Map();
+        let runningTargetDepth = 0;
+        keyInfo.forEach((info) => {
+          const mKey = info.key;
+          const matchingShas = Array.from(shaKeyMap.entries()).filter(([s, k]) => k === mKey).map(([s]) => s);
+          const maxRawDepthOfKey = Math.max(1, ...matchingShas.map(sha => rawDepths.get(sha) || 1));
+
+          runningTargetDepth = Math.max(runningTargetDepth + 1, maxRawDepthOfKey);
+          milestoneTargetDepths.set(mKey, runningTargetDepth);
+        });
+
+        function buildPadded(n, currentMilestoneDepth) {
+          const children = childrenOf.get(n.sha) || [];
+          const paddedChildren = [];
+
+          children.forEach(c => {
+            const cKey = shaKeyMap.get(c.sha);
+            let childTargetDepth;
+            if (cKey && milestoneTargetDepths.has(cKey)) {
+              childTargetDepth = milestoneTargetDepths.get(cKey);
+            } else {
+              childTargetDepth = currentMilestoneDepth + 1;
+            }
+
+            const dummyHops = Math.max(0, childTargetDepth - currentMilestoneDepth - 1);
+            let childTree = buildPadded(c, childTargetDepth);
+
+            for (let i = 0; i < dummyHops; i++) {
+              childTree = {
+                sha: `__dummy_${c.sha}_${i}__`,
+                node: null,
+                isDummy: true,
+                children: [childTree],
+              };
+            }
+            paddedChildren.push(childTree);
+          });
+
+          return {
+            sha: n.sha,
+            node: n,
+            milestoneKey: shaKeyMap.get(n.sha) || null,
+            children: paddedChildren,
+          };
+        }
+
+        const synthetic = roots.length !== 1;
+        const firstTarget = shaKeyMap.get(roots[0].sha) ? (milestoneTargetDepths.get(shaKeyMap.get(roots[0].sha)) || 1) : 1;
+        rootData = synthetic
+          ? { sha: '__synthetic_root__', node: null, children: roots.map(r => buildPadded(r, firstTarget)) }
+          : buildPadded(roots[0], firstTarget);
+      }
+
+      const synthetic = roots.length !== 1;
       const hierarchy = d3.hierarchy(rootData, d => d.children);
       d3.tree().nodeSize([nodeH + nodesep, nodeW + ranksep])(hierarchy);
 
-      const realNodes = hierarchy.descendants().filter(d => !(synthetic && d.depth === 0));
+      const realNodes = hierarchy.descendants().filter(d => !d.data.isDummy && !(synthetic && d.depth === 0));
+
       const posMap = new Map();
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       realNodes.forEach(d => {
-        // d3.tree() lays out top-down (x = breadth, y = depth); this graph
-        // renders left-to-right, so swap them onto screen axes.
         const screenX = d.y, screenY = d.x;
         minX = Math.min(minX, screenX); maxX = Math.max(maxX, screenX);
         minY = Math.min(minY, screenY); maxY = Math.max(maxY, screenY);
@@ -1589,11 +1971,74 @@ const app = createApp({
         }),
       };
 
+      if (this.selectedAlignments && this.selectedAlignments.length && this.showMilestoneGuides) {
+        const guideG = inner.append('g').attr('class', 'milestone-guides');
+        const rankInfoMap = new Map();
+
+        realNodes.forEach(d => {
+          if (d.data.milestoneKey && posMap.has(d.data.sha)) {
+            const pos = posMap.get(d.data.sha);
+            if (!rankInfoMap.has(d.data.milestoneKey)) {
+              rankInfoMap.set(d.data.milestoneKey, {
+                x: pos.x,
+                label: d.data.milestoneKey,
+              });
+            }
+          }
+        });
+
+        rankInfoMap.forEach(({ x, label }) => {
+          const lineX = x - nodeW / 2 - 25;
+          const textLabel = label.length > 28 ? label.slice(0, 26) + '…' : label;
+
+          guideG.append('line')
+            .attr('class', 'guide-line')
+            .attr('x1', lineX).attr('y1', 0)
+            .attr('x2', lineX).attr('y2', 0)
+            .attr('stroke', '#8ab4f8')
+            .attr('stroke-opacity', '0.6')
+            .attr('stroke-dasharray', '6,4')
+            .attr('stroke-width', 2.0);
+
+          // Top label text
+          guideG.append('text')
+            .attr('class', 'guide-label-top')
+            .attr('x', lineX)
+            .attr('y', 0)
+            .attr('text-anchor', 'middle')
+            .attr('fill', 'var(--accent2)')
+            .attr('font-size', '11px')
+            .attr('font-weight', '600')
+            .text(textLabel);
+
+          // Bottom label text
+          guideG.append('text')
+            .attr('class', 'guide-label-bottom')
+            .attr('x', lineX)
+            .attr('y', 0)
+            .attr('text-anchor', 'middle')
+            .attr('fill', 'var(--accent2)')
+            .attr('font-size', '11px')
+            .attr('font-weight', '600')
+            .text(textLabel);
+        });
+
+        this.updateMilestoneGuidesViewport();
+      }
+
       const edgesG = inner.append('g').attr('class', 'edgePaths');
-      hierarchy.links().forEach(link => {
-        if (synthetic && link.source.depth === 0) return;
-        const sp = posMap.get(link.source.data.sha);
-        const tp = posMap.get(link.target.data.sha);
+      realNodes.forEach(d => {
+        if (synthetic && d.depth === 0) return;
+        let p = d.parent;
+        while (p && (p.data.isDummy || (synthetic && p.depth === 0))) {
+          p = p.parent;
+        }
+        if (!p || !p.data || !p.data.sha) return;
+
+        const sp = posMap.get(p.data.sha);
+        const tp = posMap.get(d.data.sha);
+        if (!sp || !tp) return;
+
         const sx = sp.x + nodeW / 2, sy = sp.y;
         const tx = tp.x - nodeW / 2, ty = tp.y;
         const midX = (sx + tx) / 2;
@@ -1622,7 +2067,6 @@ const app = createApp({
             .attr('width', nodeW).attr('height', nodeH);
         });
 
-      const self = this;
       this._nodePosMap = posMap;
       this._layoutMeta = { nodeW, nodeH, imgW, imgH, spaceId, slot };
 
@@ -1743,6 +2187,7 @@ const app = createApp({
       const zoom = d3.zoom().on('zoom', () => {
         inner.attr('transform', d3.event.transform);
         self._savedZoom = d3.event.transform;
+        self.updateMilestoneGuidesViewport();
         clearTimeout(self._hydrateTimer);
         self._hydrateTimer = setTimeout(() => self.hydrateVisibleNodes(), 120);
       });
@@ -1843,6 +2288,111 @@ const app = createApp({
           .attr('points', `-11,${triY} 11,${triY} 0,${triY + 14}`)
           .attr('fill', '#c8a020');
       }
+
+      // Left-Edge Overlay Tag Manager
+      const tags = (self.nodeTags && self.nodeTags[sha]) || [];
+      const tagFoH = 30 + (tags.length * 26);
+      const tagFo = nodeSel.append('foreignObject')
+        .attr('class', 'node-tag-manager')
+        .attr('x', -nodeW / 2 - 10)
+        .attr('y', -nodeH / 2 + 23)
+        .attr('width', 220)
+        .attr('height', Math.max(120, tagFoH))
+        .style('overflow', 'visible');
+
+      const tagContainer = tagFo.append('xhtml:div')
+        .style('display', 'flex')
+        .style('flex-direction', 'column')
+        .style('align-items', 'flex-start')
+        .style('gap', '4px')
+        .style('pointer-events', 'auto');
+
+      // +tag button / input
+      const addPill = tagContainer.append('xhtml:div')
+        .style('background', 'rgba(15, 15, 34, 0.92)')
+        .style('border', '1px solid var(--accent)')
+        .style('color', 'var(--accent2)')
+        .style('font-size', '11px')
+        .style('font-weight', '600')
+        .style('padding', '2px 8px')
+        .style('border-radius', '10px')
+        .style('cursor', 'pointer')
+        .style('backdrop-filter', 'blur(4px)')
+        .style('box-shadow', '0 2px 8px rgba(0,0,0,0.5)')
+        .style('display', 'inline-flex')
+        .style('align-items', 'center')
+        .style('gap', '4px')
+        .style('white-space', 'nowrap')
+        .html('+tag');
+
+      addPill.on('click', function() {
+        d3.event.stopPropagation();
+        const currentPill = d3.select(this);
+        currentPill.html('');
+        const input = currentPill.append('xhtml:input')
+          .attr('type', 'text')
+          .attr('placeholder', 'tag...')
+          .style('background', 'transparent')
+          .style('border', 'none')
+          .style('outline', 'none')
+          .style('color', '#fff')
+          .style('font-size', '11px')
+          .style('font-weight', '600')
+          .style('width', '40px')
+          .style('padding', '0');
+
+        input.node().focus();
+
+        input.on('input', function() {
+          const val = this.value;
+          const charLen = Math.max(1, val.length);
+          this.style.width = (charLen * 7.5 + 24) + 'px';
+        });
+
+        input.on('keydown', async function() {
+          if (d3.event.key === 'Enter') {
+            d3.event.preventDefault();
+            d3.event.stopPropagation();
+            const tagVal = this.value.trim();
+            if (tagVal) {
+              await self.addNodeTag(sha, tagVal);
+            }
+          } else if (d3.event.key === 'Escape') {
+            d3.event.stopPropagation();
+            currentPill.html('+tag');
+          }
+        });
+      });
+
+      // Existing tags stacked vertically below +tag
+      tags.forEach(t => {
+        const tagPill = tagContainer.append('xhtml:div')
+          .style('background', 'rgba(168, 85, 247, 0.92)')
+          .style('color', '#fff')
+          .style('font-size', '11px')
+          .style('font-weight', '600')
+          .style('padding', '2px 8px')
+          .style('border-radius', '10px')
+          .style('backdrop-filter', 'blur(4px)')
+          .style('box-shadow', '0 2px 8px rgba(0,0,0,0.5)')
+          .style('display', 'inline-flex')
+          .style('align-items', 'center')
+          .style('gap', '4px')
+          .style('white-space', 'nowrap')
+          .html(`#${t}`);
+
+        const delBtn = tagPill.append('xhtml:span')
+          .style('cursor', 'pointer')
+          .style('margin-left', '4px')
+          .style('opacity', '0.7')
+          .style('font-size', '10px')
+          .html('×');
+
+        delBtn.on('click', async function() {
+          d3.event.stopPropagation();
+          await self.removeNodeTag(sha, t);
+        });
+      });
       const hasNote = !!n.note;
       const pencilColor = hasNote ? '#c8a020' : '#445566';
       const pencilG = nodeSel.append('g')
@@ -2016,7 +2566,8 @@ const app = createApp({
       try {
         const space = this.spaces.find(s => s.id === this.selectedSpaceId);
         const favs = space?.favorite_vars || [];
-        const needed = new Set(favs);
+        const mVars = space?.milestone_vars || [];
+        const needed = new Set([...favs, ...mVars]);
         const expr = ((this.graphOrderByExpr || '') + ' ' + (this.filterExpr || '') + ' ' + (space?.lineage_validity_expr || '')).match(/[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
         const reserved = new Set(['chrono', 'jaccard', 'asc', 'desc', 'score', 'day', 'and', 'or', 'not', 'true', 'false', 'delta', 'changed', 'added']);
         expr.forEach(v => {
@@ -2460,7 +3011,12 @@ const app = createApp({
               title: 'Slot Exclude Regex',
               description: 'Hides matching slot names, like autosaves, from the slot picker.',
               side: 'bottom',
-              align: 'start'
+              align: 'start',
+              onNextClick: () => {
+                const details = document.getElementById('advanced-details');
+                if (details) details.open = true;
+                driverObj.moveNext();
+              }
             }
           },
           {
@@ -2468,6 +3024,19 @@ const app = createApp({
             popover: {
               title: 'Lineage Validity Check',
               description: 'An optional expression (same language as the Graph Filter) describing what a valid save looks like, e.g. delta(\'karma\') >= 0. Any node where it evaluates false gets flagged with a red border — useful for catching an accidental save of past state over future state.',
+              side: 'left',
+              align: 'start',
+              onHighlightStarted: () => {
+                const details = document.getElementById('advanced-details');
+                if (details) details.open = true;
+              }
+            }
+          },
+          {
+            element: '#field-milestone-vars',
+            popover: {
+              title: 'Milestone Progress Variables',
+              description: 'Configure story progress variables (such as <code>currentEpisode</code> or <code>chapter</code>) that increase monotonically. Save points advancing to new milestone values across separate subtrees align along vertical milestone columns in the graph view.',
               side: 'left',
               align: 'start',
               onHighlightStarted: () => {

@@ -36,6 +36,7 @@ class GameSpace:
     filter_history: list[str] = field(default_factory=list)
     sort_history: list[str] = field(default_factory=list)
     lineage_validity_expr: str = ""
+    milestone_vars: list[str] = field(default_factory=list)
 
 
 @dataclass

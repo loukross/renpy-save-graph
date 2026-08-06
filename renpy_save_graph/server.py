@@ -24,7 +24,7 @@ from .thumbnail import stamp_png
 from .watcher import Director, SpaceConfig
 
 _HTML_PATH = Path(__file__).parent / "ui.html"
-_SPACE_PATCHABLE = {"label", "saves_dir", "node_hint_format", "slot_exclude", "lineage_validity_expr", "favorite_vars", "filter_history", "sort_history"}
+_SPACE_PATCHABLE = {"label", "saves_dir", "node_hint_format", "slot_exclude", "lineage_validity_expr", "milestone_vars", "favorite_vars", "filter_history", "sort_history"}
 
 
 class _SortVal:
@@ -145,6 +145,8 @@ def create_app(config_path: Path) -> FastAPI:
             library_path=body.get("library_path") or str(default_library_path(space_id)),
             node_hint_format=body.get("node_hint_format", ""),
             slot_exclude=body.get("slot_exclude", ""),
+            lineage_validity_expr=body.get("lineage_validity_expr", ""),
+            milestone_vars=body.get("milestone_vars", []),
         )
         cfg.spaces.append(space)
         save(cfg)
@@ -452,6 +454,34 @@ def create_app(config_path: Path) -> FastAPI:
             row["sha"]: f"data:image/png;base64,{base64.b64encode(row['thumbnail']).decode('ascii')}"
             for row in rows
         }
+
+    @app.get("/api/spaces/{space_id}/slots/{slot_name}/tags")
+    def api_get_tags(space_id: str, slot_name: str) -> dict[str, Any]:
+        space = get_space_or_404(space_id)
+        director = make_director(space)
+        db = make_db(space)
+        nodes = director.library.dag_for_slot(slot_name, director.slot_names())
+        shas = [n.sha for n in nodes]
+        return {
+            "tags": db.get_tags(shas),
+            "all_tags": db.get_all_tags(),
+        }
+
+    @app.post("/api/spaces/{space_id}/slots/{slot_name}/nodes/{sha}/tags")
+    def api_add_node_tag(space_id: str, slot_name: str, sha: str, body: dict[str, Any] = Body(...)) -> dict[str, bool]:
+        space = get_space_or_404(space_id)
+        db = make_db(space)
+        tag = body.get("tag", "").strip()
+        if tag:
+            db.add_tag(sha, tag)
+        return {"ok": True}
+
+    @app.delete("/api/spaces/{space_id}/slots/{slot_name}/nodes/{sha}/tags/{tag}")
+    def api_delete_node_tag(space_id: str, slot_name: str, sha: str, tag: str) -> dict[str, bool]:
+        space = get_space_or_404(space_id)
+        db = make_db(space)
+        db.remove_tag(sha, tag)
+        return {"ok": True}
 
     # -- file watcher (SSE) --------------------------------------------------
 

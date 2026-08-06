@@ -53,6 +53,14 @@ class DatabaseStore:
                 );
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_vars_sha ON variables(sha);")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS tags (
+                    sha TEXT NOT NULL,
+                    tag_name TEXT NOT NULL,
+                    PRIMARY KEY (sha, tag_name)
+                );
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_tags_sha ON tags(sha);")
 
     def sync_with_git(self, lib: "Library", slot_branch: str, all_slot_branches: list[str]) -> None:
         """Self-healing sync: compares SQLite against Git DAG, populates missing nodes, and purges deleted/stale nodes."""
@@ -181,3 +189,44 @@ class DatabaseStore:
         with self._get_conn() as conn:
             conn.execute("DELETE FROM nodes WHERE sha = ?", (sha,))
             conn.execute("DELETE FROM variables WHERE sha = ?", (sha,))
+            conn.execute("DELETE FROM tags WHERE sha = ?", (sha,))
+
+    def get_tags(self, shas: list[str]) -> dict[str, list[str]]:
+        if not shas:
+            return {}
+        placeholders = ",".join("?" for _ in shas)
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                f"SELECT sha, tag_name FROM tags WHERE sha IN ({placeholders}) ORDER BY tag_name ASC",
+                shas,
+            ).fetchall()
+            result: dict[str, list[str]] = {s: [] for s in shas}
+            for r in rows:
+                if r["sha"] in result:
+                    result[r["sha"]].append(r["tag_name"])
+            return result
+
+    def add_tag(self, sha: str, tag_name: str) -> None:
+        tag_clean = tag_name.strip().lstrip('#').lower()
+        if not tag_clean:
+            return
+        with self._get_conn() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO tags (sha, tag_name) VALUES (?, ?)",
+                (sha, tag_clean),
+            )
+
+    def remove_tag(self, sha: str, tag_name: str) -> None:
+        tag_clean = tag_name.strip().lstrip('#').lower()
+        with self._get_conn() as conn:
+            conn.execute(
+                "DELETE FROM tags WHERE sha = ? AND tag_name = ?",
+                (sha, tag_clean),
+            )
+
+    def get_all_tags(self) -> list[str]:
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT tag_name FROM tags ORDER BY tag_name ASC"
+            ).fetchall()
+            return [r["tag_name"] for r in rows]
