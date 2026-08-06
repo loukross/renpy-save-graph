@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
+from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 from .config import AppConfig, GameSpace, default_config_path, default_library_path
@@ -87,11 +88,9 @@ def create_app(config_path: Path) -> FastAPI:
         lib_path = Path(space.library_path)
         return DatabaseStore(lib_path / "graph.sqlite")
 
-    # -- UI ------------------------------------------------------------------
-
     @app.get("/", response_class=HTMLResponse)
-    def index() -> str:
-        return html
+    def index() -> Response:
+        return HTMLResponse(content=html)
 
     @app.get("/assets/{filename}")
     def api_asset(filename: str):

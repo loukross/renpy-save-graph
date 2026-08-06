@@ -17,3 +17,7 @@ venv/
 # do not commit real saves into this (the app's source) repo.
 /samples/
 /scratch/
+
+# Node
+node_modules/
+
