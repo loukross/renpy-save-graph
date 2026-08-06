@@ -142,15 +142,18 @@ def _current_node(log: Any) -> dict[str, Any] | None:
     return None
 
 
+EXCLUDED_STORE_VARS = {"args", "kwargs"}
+
+
 def extract(save_path: str) -> SaveState:
     """Decode a .save into a SaveState of JSON-serializable game state."""
     meta = read_meta(save_path)
     roots, log = load_log(save_path)
 
     variables = {
-        key[len("store."):]: _to_json(value)
+        var_name: _to_json(value)
         for key, value in roots.items()
-        if key.startswith("store.")
+        if key.startswith("store.") and (var_name := key[len("store."):]) not in EXCLUDED_STORE_VARS
     }
 
     return SaveState(
