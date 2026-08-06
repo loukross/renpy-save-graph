@@ -1477,10 +1477,6 @@ const app = createApp({
       if (!this.graphData || !this.graphData.nodes.length) return;
 
       const hasNotes = this.graphData.nodes.some(n => n.note);
-      const g = new dagreD3.graphlib.Graph()
-        .setGraph({ rankdir: 'LR', nodesep: hasNotes ? 100 : 30, ranksep: 50, marginx: 30, marginy: 30 });
-      this.g = g;
-
       const spaceId = this.selectedSpaceId;
       const slot = this.selectedSlot;
       const hasHint = this.graphData.nodes.some(n => n.hint);
@@ -1488,8 +1484,13 @@ const app = createApp({
       const imgH = 172;
       const nodeW = 326;
       const nodeH = hasHint ? (imgH + 85) : (imgH + 50);
+      const nodesep = hasNotes ? 100 : 30;
+      const ranksep = 50;
 
-      // Calculate branch ranks based on leaf_order for ordering & edge weighting
+      // Calculate branch ranks based on leaf_order, used only to order siblings
+      // (this graph is always a strict single-parent tree, so unlike a general
+      // DAG layout there's no crossing-minimization needed here — sibling order
+      // is the only layout-relevant choice `jaccard`/`chrono` sort affects).
       const leafOrder = (this.graphData && this.graphData.leaf_order) || [];
       const leafRankMap = new Map(leafOrder.map((sha, idx) => [sha, idx]));
       const nodeRankMap = new Map();
@@ -1515,160 +1516,299 @@ const app = createApp({
       });
 
       const dir = this.graphBaseDir === 'asc' ? 1 : -1;
-      const sortedNodes = [...this.graphData.nodes].sort((a, b) => {
+      const siblingCompare = (a, b) => {
         if (this.graphBaseSort === 'jaccard') {
           const rA = nodeRankMap.get(a.sha) ?? 0;
           const rB = nodeRankMap.get(b.sha) ?? 0;
           if (rA !== rB) return (rA - rB) * dir;
         }
         return (a.when - b.when) * dir;
+      };
+
+      // Build a top-down children map from the flat parents[] model (single
+      // parent per node — this graph is always a strict tree).
+      const childrenOf = new Map();
+      const roots = [];
+      this.graphData.nodes.forEach(n => {
+        const p = n.parents && n.parents.length ? n.parents[0] : null;
+        if (!p) { roots.push(n); return; }
+        if (!childrenOf.has(p)) childrenOf.set(p, []);
+        childrenOf.get(p).push(n);
+      });
+      for (const arr of childrenOf.values()) arr.sort(siblingCompare);
+      roots.sort(siblingCompare);
+
+      function build(n) {
+        return { sha: n.sha, node: n, children: (childrenOf.get(n.sha) || []).map(build) };
+      }
+      const synthetic = roots.length !== 1;
+      const rootData = synthetic
+        ? { sha: '__synthetic_root__', node: null, children: roots.map(build) }
+        : build(roots[0]);
+
+      const hierarchy = d3.hierarchy(rootData, d => d.children);
+      d3.tree().nodeSize([nodeH + nodesep, nodeW + ranksep])(hierarchy);
+
+      const realNodes = hierarchy.descendants().filter(d => !(synthetic && d.depth === 0));
+      const posMap = new Map();
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      realNodes.forEach(d => {
+        // d3.tree() lays out top-down (x = breadth, y = depth); this graph
+        // renders left-to-right, so swap them onto screen axes.
+        const screenX = d.y, screenY = d.x;
+        minX = Math.min(minX, screenX); maxX = Math.max(maxX, screenX);
+        minY = Math.min(minY, screenY); maxY = Math.max(maxY, screenY);
+        posMap.set(d.data.sha, { rawX: screenX, rawY: screenY });
+      });
+      if (!realNodes.length) { minX = maxX = minY = maxY = 0; }
+      const shiftX = -(minX - nodeW / 2);
+      const shiftY = -(minY - nodeH / 2);
+      posMap.forEach((p, sha) => {
+        p.x = p.rawX + shiftX;
+        p.y = p.rawY + shiftY;
+        p.width = nodeW;
+        p.height = nodeH;
       });
 
-      sortedNodes.forEach(n => {
-        const cls = [n.is_head ? 'head' : '', n.is_suspect ? 'suspect' : ''].filter(Boolean).join(' ');
-        g.setNode(n.sha, {
-          label: '',
-          class: cls,
-          rx: 6, ry: 6,
-          width: nodeW,
-          height: nodeH,
+      this.g = {
+        node: sha => posMap.get(sha),
+        graph: () => ({
+          width: (maxX - minX) + nodeW || 400,
+          height: (maxY - minY) + nodeH || 400,
+        }),
+      };
+
+      const edgesG = inner.append('g').attr('class', 'edgePaths');
+      hierarchy.links().forEach(link => {
+        if (synthetic && link.source.depth === 0) return;
+        const sp = posMap.get(link.source.data.sha);
+        const tp = posMap.get(link.target.data.sha);
+        const sx = sp.x + nodeW / 2, sy = sp.y;
+        const tx = tp.x - nodeW / 2, ty = tp.y;
+        const midX = (sx + tx) / 2;
+        edgesG.append('g').attr('class', 'edgePath')
+          .append('path')
+          .attr('d', `M${sx},${sy} C${midX},${sy} ${midX},${ty} ${tx},${ty}`);
+      });
+
+      const nodesG = inner.append('g').attr('class', 'nodes');
+      nodesG.selectAll('g.node')
+        .data(realNodes, d => d.data.sha)
+        .enter()
+        .append('g')
+        .attr('class', d => {
+          const n = d.data.node;
+          return ['node', n.is_head ? 'head' : '', n.is_suspect ? 'suspect' : ''].filter(Boolean).join(' ');
+        })
+        .style('cursor', 'pointer')
+        .attr('transform', d => `translate(${posMap.get(d.data.sha).x},${posMap.get(d.data.sha).y})`)
+        .datum(d => d.data.sha)
+        .each(function() {
+          d3.select(this).append('rect')
+            .attr('rx', 6).attr('ry', 6)
+            .attr('x', -nodeW / 2).attr('y', -nodeH / 2)
+            .attr('width', nodeW).attr('height', nodeH);
         });
-      });
-
-      sortedNodes.forEach(n => {
-        const rank = nodeRankMap.get(n.sha) ?? 0;
-        const weight = Math.max(1, 100 - rank * 2);
-        n.parents.forEach(p => g.setEdge(p, n.sha, { curve: d3.curveBasis, weight: weight }));
-      });
-
-      const render = new dagreD3.render();
-      render(inner, g);
 
       const self = this;
+      this._nodePosMap = posMap;
+      this._layoutMeta = { nodeW, nodeH, imgW, imgH, spaceId, slot };
+
+      // Decide the transform *before* decorating, not after, so the very
+      // first render already knows its real viewport instead of falling
+      // back to "decorate everything". Reuse an existing pan/zoom position
+      // if there is one; otherwise center tightly on HEAD (~1 sibling node
+      // visible above/below) rather than fitting/decorating the whole tree.
+      if (!this._savedZoom) {
+        const sw = svgEl.clientWidth, sh = svgEl.clientHeight;
+        const headPos = this.g.node(this.graphData.head);
+        const desiredWorldHeight = 3 * nodeH + 2 * nodesep;
+        const scale = Math.max(0.3, Math.min(2.5, sh / desiredWorldHeight));
+        this._savedZoom = d3.zoomIdentity
+          .translate(sw / 2 - headPos.x * scale, sh / 2 - headPos.y * scale)
+          .scale(scale);
+      }
+
+      // Only fully decorate (thumbnail image + text + foreignObjects + pencil
+      // icon) nodes near the viewport this._savedZoom puts us at; everything
+      // else gets a cheap placeholder (just the rect + head marker) and gets
+      // upgraded lazily as the user pans/zooms it into view via
+      // hydrateVisibleNodes().
+      const viewportBounds = this._viewportWorldBounds();
 
       inner.selectAll('g.node').each(function(sha) {
-        const n = self.graphData.nodes.find(nd => nd.sha === sha);
-        d3.select(this).select('.label').remove();
-        const imgX = -imgW / 2;
-        const imgY = -nodeH / 2 + 3;
-        const tsY  = imgY + imgH + 20;
-        d3.select(this).append('image')
-          .attr('href', self.nodeThumbnails[sha] || `/api/spaces/${spaceId}/slots/${slot}/screenshot/${sha}`)
-          .attr('x', imgX).attr('y', imgY)
-          .attr('width', imgW).attr('height', imgH)
-          .attr('preserveAspectRatio', 'xMidYMid meet');
-        if (n) {
-          const ts = new Date(n.when * 1000);
-          const label = ts.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-                      + ' ' + ts.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-          d3.select(this).append('text')
-            .attr('x', 0).attr('y', tsY)
-            .attr('text-anchor', 'middle')
-            .attr('font-size', '14')
-            .attr('fill', '#8a9ac0')
-            .text(label);
-          if (n.hint) {
-            const fo = d3.select(this).append('foreignObject')
-              .attr('x', -nodeW / 2 + 6).attr('y', tsY + 14)
-              .attr('width', nodeW - 12).attr('height', 38);
-            fo.append('xhtml:div')
-              .style('font-size', '13px')
-              .style('color', '#607080')
-              .style('text-align', 'center')
-              .style('line-height', '1.35')
-              .style('overflow', 'hidden')
-              .style('max-height', '38px')
-              .style('padding', '0 6px')
-              .style('word-break', 'break-word')
-              .text(n.hint);
-          }
-          if (n.is_head) {
+        const pos = posMap.get(sha);
+        const inView = !viewportBounds || self._inBounds(pos, viewportBounds);
+        if (inView) {
+          self._decorateNode(this, sha);
+        } else {
+          d3.select(this).classed('node-placeholder', true);
+          const n = self.graphData.nodes.find(nd => nd.sha === sha);
+          if (n && n.is_head) {
             const triY = -(nodeH / 2) - 10;
             d3.select(this).append('polygon')
               .attr('points', `-8,${triY} 8,${triY} 0,${triY + 10}`)
               .attr('fill', '#c8a020');
           }
-          const hasNote = n && !!n.note;
-          const pencilColor = hasNote ? '#c8a020' : '#445566';
-          const pencilG = d3.select(this).append('g')
-            .attr('cursor', 'pointer')
-            .attr('class', 'node-pencil');
-          pencilG.append('circle')
-            .attr('cx', -nodeW / 2 - 2).attr('cy', nodeH / 2 + 6)
-            .attr('r', 13)
-            .style('fill', '#0f0f22')
-            .attr('stroke', pencilColor)
-            .attr('stroke-width', 1.5);
-          pencilG.append('text')
-            .attr('x', -nodeW / 2 - 2).attr('y', nodeH / 2 + 11)
-            .attr('text-anchor', 'middle')
-            .attr('font-size', '16')
-            .attr('fill', pencilColor)
-            .attr('pointer-events', 'none')
-            .text('✎');
-          if (hasNote) {
-            const nfo = d3.select(this).append('foreignObject')
-              .attr('x', -nodeW / 2).attr('y', nodeH / 2 + 22)
-              .attr('width', nodeW).attr('height', 80);
-            nfo.append('xhtml:div')
-              .style('font-size', '14px')
-              .style('color', '#8a9ac0')
-              .style('line-height', '1.4')
-              .style('overflow', 'hidden')
-              .style('max-height', '80px')
-              .style('padding', '0 6px')
-              .style('word-break', 'break-word')
-              .style('white-space', 'pre-line')
-              .text(n.note);
-          }
-          pencilG.on('click', function() {
-            d3.event.stopPropagation();
-            const nodeG = this.closest ? this.closest('g.node') : this.parentNode;
-            const rr = (nodeG.querySelector('rect') || nodeG).getBoundingClientRect();
-            const scale = self._savedZoom ? self._savedZoom.k : 1;
-            self.noteOverlay = {
-              open: true,
-              sha: sha,
-              x: Math.round(rr.left),
-              y: Math.round(rr.bottom + 4),
-              scale,
-            };
-            self.noteText = (self.graphData.nodes.find(nd => nd.sha === sha)?.note) || '';
-            self.$nextTick(() => { if (self.$refs.noteTextarea) self.$refs.noteTextarea.focus(); });
-          });
-          if (self.filterActive && self.filterParsed) {
-            const vars = self.nodeStates[sha] || {};
-            let passes = true;
-            try { passes = !!self.evalJsep(self.filterParsed, vars, sha); } catch(e) {}
-            if (!passes) d3.select(this).style('opacity', '0.25').style('filter', 'blur(2px)');
-          }
+        }
+        if (self.filterActive && self.filterParsed) {
+          const vars = self.nodeStates[sha] || {};
+          let passes = true;
+          try { passes = !!self.evalJsep(self.filterParsed, vars, sha); } catch(e) {}
+          if (!passes) d3.select(this).style('opacity', '0.25').style('filter', 'blur(2px)');
         }
       });
 
       const zoom = d3.zoom().on('zoom', () => {
         inner.attr('transform', d3.event.transform);
         self._savedZoom = d3.event.transform;
+        clearTimeout(self._hydrateTimer);
+        self._hydrateTimer = setTimeout(() => self.hydrateVisibleNodes(), 120);
       });
       self._zoomBehavior = zoom;
       svg.call(zoom);
-
-      if (this._savedZoom) {
-        svg.call(zoom.transform, this._savedZoom);
-      } else {
-        const gw = g.graph().width  || 400;
-        const gh = g.graph().height || 400;
-        const sw = svgEl.clientWidth, sh = svgEl.clientHeight;
-        const scale = Math.min(1, 0.9 * Math.min(sw / (gw + 60), sh / (gh + 60)));
-        svg.call(zoom.transform,
-          d3.zoomIdentity
-            .translate((sw - gw * scale) / 2, (sh - gh * scale) / 2)
-            .scale(scale));
-      }
+      svg.call(zoom.transform, this._savedZoom);
 
       inner.selectAll('g.node').on('click', async function(sha) {
         inner.selectAll('g.node').classed('selected', false);
         d3.select(this).classed('selected', true);
         await self.selectNode(sha);
+      });
+    },
+
+    // -- viewport-based decoration hydration --------------------------------
+
+    _viewportWorldBounds(marginFactor = 0.75) {
+      const svgEl = this.$refs.graphSvg;
+      if (!svgEl || !this._savedZoom) return null;
+      const { k, x, y } = this._savedZoom;
+      const w = svgEl.clientWidth || 800, h = svgEl.clientHeight || 600;
+      const marginX = (w / k) * marginFactor;
+      const marginY = (h / k) * marginFactor;
+      return {
+        minX: (0 - x) / k - marginX,
+        maxX: (w - x) / k + marginX,
+        minY: (0 - y) / k - marginY,
+        maxY: (h - y) / k + marginY,
+      };
+    },
+
+    _inBounds(pos, bounds) {
+      if (!pos) return false;
+      const meta = this._layoutMeta || {};
+      const hw = (meta.nodeW || 0) / 2, hh = (meta.nodeH || 0) / 2;
+      return pos.x + hw >= bounds.minX && pos.x - hw <= bounds.maxX &&
+             pos.y + hh >= bounds.minY && pos.y - hh <= bounds.maxY;
+    },
+
+    hydrateVisibleNodes() {
+      const svgEl = this.$refs.graphSvg;
+      if (!svgEl || !this._nodePosMap) return;
+      const bounds = this._viewportWorldBounds();
+      if (!bounds) return;
+      const self = this;
+      d3.select(svgEl).selectAll('g.node.node-placeholder').each(function(sha) {
+        const pos = self._nodePosMap.get(sha);
+        if (pos && self._inBounds(pos, bounds)) {
+          d3.select(this).selectAll('polygon').remove();
+          self._decorateNode(this, sha);
+          d3.select(this).classed('node-placeholder', false);
+        }
+      });
+    },
+
+    _decorateNode(el, sha) {
+      const self = this;
+      const { nodeW, nodeH, imgW, imgH, spaceId, slot } = this._layoutMeta;
+      const n = self.graphData.nodes.find(nd => nd.sha === sha);
+      if (!n) return;
+      const nodeSel = d3.select(el);
+      nodeSel.select('.label').remove();
+      const imgX = -imgW / 2;
+      const imgY = -nodeH / 2 + 3;
+      const tsY  = imgY + imgH + 20;
+      nodeSel.append('image')
+        .attr('href', self.nodeThumbnails[sha] || `/api/spaces/${spaceId}/slots/${slot}/screenshot/${sha}`)
+        .attr('x', imgX).attr('y', imgY)
+        .attr('width', imgW).attr('height', imgH)
+        .attr('preserveAspectRatio', 'xMidYMid meet');
+      const ts = new Date(n.when * 1000);
+      const label = ts.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                  + ' ' + ts.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      nodeSel.append('text')
+        .attr('x', 0).attr('y', tsY)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', '14')
+        .attr('fill', '#8a9ac0')
+        .text(label);
+      if (n.hint) {
+        const fo = nodeSel.append('foreignObject')
+          .attr('x', -nodeW / 2 + 6).attr('y', tsY + 14)
+          .attr('width', nodeW - 12).attr('height', 38);
+        fo.append('xhtml:div')
+          .style('font-size', '13px')
+          .style('color', '#607080')
+          .style('text-align', 'center')
+          .style('line-height', '1.35')
+          .style('overflow', 'hidden')
+          .style('max-height', '38px')
+          .style('padding', '0 6px')
+          .style('word-break', 'break-word')
+          .text(n.hint);
+      }
+      if (n.is_head) {
+        const triY = -(nodeH / 2) - 10;
+        nodeSel.append('polygon')
+          .attr('points', `-8,${triY} 8,${triY} 0,${triY + 10}`)
+          .attr('fill', '#c8a020');
+      }
+      const hasNote = !!n.note;
+      const pencilColor = hasNote ? '#c8a020' : '#445566';
+      const pencilG = nodeSel.append('g')
+        .attr('cursor', 'pointer')
+        .attr('class', 'node-pencil');
+      pencilG.append('circle')
+        .attr('cx', -nodeW / 2 - 2).attr('cy', nodeH / 2 + 6)
+        .attr('r', 13)
+        .style('fill', '#0f0f22')
+        .attr('stroke', pencilColor)
+        .attr('stroke-width', 1.5);
+      pencilG.append('text')
+        .attr('x', -nodeW / 2 - 2).attr('y', nodeH / 2 + 11)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', '16')
+        .attr('fill', pencilColor)
+        .attr('pointer-events', 'none')
+        .text('✎');
+      if (hasNote) {
+        const nfo = nodeSel.append('foreignObject')
+          .attr('x', -nodeW / 2).attr('y', nodeH / 2 + 22)
+          .attr('width', nodeW).attr('height', 80);
+        nfo.append('xhtml:div')
+          .style('font-size', '14px')
+          .style('color', '#8a9ac0')
+          .style('line-height', '1.4')
+          .style('overflow', 'hidden')
+          .style('max-height', '80px')
+          .style('padding', '0 6px')
+          .style('word-break', 'break-word')
+          .style('white-space', 'pre-line')
+          .text(n.note);
+      }
+      pencilG.on('click', function() {
+        d3.event.stopPropagation();
+        const nodeG = this.closest ? this.closest('g.node') : this.parentNode;
+        const rr = (nodeG.querySelector('rect') || nodeG).getBoundingClientRect();
+        const scale = self._savedZoom ? self._savedZoom.k : 1;
+        self.noteOverlay = {
+          open: true,
+          sha: sha,
+          x: Math.round(rr.left),
+          y: Math.round(rr.bottom + 4),
+          scale,
+        };
+        self.noteText = (self.graphData.nodes.find(nd => nd.sha === sha)?.note) || '';
+        self.$nextTick(() => { if (self.$refs.noteTextarea) self.$refs.noteTextarea.focus(); });
       });
     },
 
