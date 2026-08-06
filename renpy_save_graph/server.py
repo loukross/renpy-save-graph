@@ -349,8 +349,10 @@ def create_app(config_path: Path) -> FastAPI:
         states = db.get_all_states([sha1, sha2])
         v1, v2 = states.get(sha1, {}), states.get(sha2, {})
         all_keys = sorted(set(v1) | set(v2))
+        # `removed` distinguishes a variable the game dropped from one merely
+        # set to None — both read back as None through .get().
         changes = [
-            {"var": k, "old": v1.get(k), "new": v2.get(k)}
+            {"var": k, "old": v1.get(k), "new": v2.get(k), "removed": k not in v2}
             for k in all_keys if v1.get(k) != v2.get(k)
         ]
         return {"changes": changes}

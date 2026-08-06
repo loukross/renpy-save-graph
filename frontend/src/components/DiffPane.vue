@@ -29,7 +29,7 @@
       <div v-else-if="!node" class="diff-empty">Click a node to see what changed.</div>
       <div v-else-if="!node.parents || !node.parents.length" class="diff-empty">Root commit — no parent to diff against.</div>
       <div v-else-if="!diffData" class="diff-empty">—</div>
-      <div v-else-if="!filteredChanges.length" class="diff-empty">No variable changes{{ varFilter ? ' (filter active)' : '' }}.</div>
+      <div v-else-if="!filteredChanges.length" class="diff-empty">No variable changes{{ filterActive ? ' (filter active)' : '' }}.</div>
       <table v-else class="diff-table">
         <thead>
           <tr>
@@ -48,8 +48,8 @@
       </table>
     </div>
 
-    <div style="padding:8px 10px;border-top:1px solid var(--border);flex-shrink:0">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+    <div style="padding:10px 12px;border-top:1px solid var(--border);flex-shrink:0;background:var(--bg2);display:flex;flex-direction:column;gap:6px">
+      <div style="display:flex;align-items:center;gap:6px">
         <label style="font-size:12px;font-weight:600;color:var(--text-dim)">🔍 Variable Filter Regex</label>
       </div>
       <div style="display:flex;align-items:center;gap:4px">
@@ -65,6 +65,13 @@
           @click="varFilter = '^[^_]'"
         >Game vars</button>
       </div>
+      <label
+        style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-dim);cursor:pointer;width:fit-content;white-space:nowrap"
+        title="Hide variables that existed in the previous save but not this one — usually values the game no longer needs."
+      >
+        <input type="checkbox" v-model="hideRemoved" style="cursor:pointer;flex-shrink:0" />
+        Hide removed
+      </label>
     </div>
   </div>
 </template>
@@ -82,18 +89,29 @@ const props = defineProps({
 defineEmits(['restore', 'delete']);
 
 const varFilter = ref('^[^_]');
+const hideRemoved = ref(true);
 
 const filteredChanges = computed(() => {
   if (!props.diffData || !props.diffData.changes) return [];
+  const shown = hideRemoved.value
+    ? props.diffData.changes.filter(c => !c.removed)
+    : props.diffData.changes;
   const raw = (varFilter.value || '').trim();
-  if (!raw) return props.diffData.changes;
+  if (!raw) return shown;
   const patterns = raw.split(',').map(p => p.trim()).filter(Boolean);
   try {
     const regexes = patterns.map(p => new RegExp(p));
-    return props.diffData.changes.filter(c => regexes.some(r => r.test(c.var)));
+    return shown.filter(c => regexes.some(r => r.test(c.var)));
   } catch {
-    return props.diffData.changes;
+    return shown;
   }
+});
+
+// So "No variable changes." doesn't mislead when the only changes were removals.
+const filterActive = computed(() => {
+  if ((varFilter.value || '').trim()) return true;
+  const changes = (props.diffData && props.diffData.changes) || [];
+  return hideRemoved.value && changes.some(c => c.removed);
 });
 
 function fmtVal(v) {

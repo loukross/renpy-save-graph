@@ -122,6 +122,13 @@ input, select, textarea {
   outline: none;
   transition: border-color .15s;
 }
+/* Opt checkboxes/radios out of the full-width, padded text-input styling above. */
+input[type="checkbox"], input[type="radio"] {
+  width: auto;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 input:disabled { opacity: .5; cursor: default; }
 select option { background: var(--bg3); }

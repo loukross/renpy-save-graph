@@ -3,6 +3,33 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.conftest import create_mock_save_zip
+
+
+@pytest.mark.api
+def test_api_diff_flags_removed_vars_apart_from_null_ones(tmp_workspace, test_client: TestClient):
+    """`removed` must distinguish a dropped variable from one set to None.
+
+    Both read back as None through .get(), so the flag is the only way the UI
+    can tell "the game stopped tracking this" from "its value is now null".
+    """
+    space_id, slot = "test-space-id", "1-1-LT1"
+    # Root save is {"money": 100, "karma": 0}.  Drop karma, null out money.
+    tmp_workspace["slot_file"].write_bytes(create_mock_save_zip({"money": None}, "ch2"))
+    assert test_client.post(f"/api/spaces/{space_id}/slots/{slot}/ingest").json()["committed"]
+
+    nodes = test_client.get(f"/api/spaces/{space_id}/slots/{slot}/graph").json()["nodes"]
+    child = next(n for n in nodes if n["parents"])
+    resp = test_client.get(
+        f"/api/spaces/{space_id}/slots/{slot}/diff/{child['parents'][0]}/{child['sha']}"
+    )
+    assert resp.status_code == 200
+
+    changes = {c["var"]: c for c in resp.json()["changes"]}
+    assert changes["karma"]["removed"] is True
+    assert changes["money"]["removed"] is False
+    assert changes["money"]["new"] is None
+
 
 @pytest.mark.api
 def test_api_graph_endpoint(test_client: TestClient):
