@@ -1665,7 +1665,7 @@ const app = createApp({
         }
       }
 
-      return parts.length ? parts.join(' | ') : null;
+      return parts.length ? parts : null;
     },
 
     updateMilestoneGuidesViewport() {
@@ -1856,12 +1856,16 @@ const app = createApp({
       } else {
         // Pre-layout milestone padding pass
         const shaKeyMap = new Map();
+        const shaKeyPartsMap = new Map();
         const rawDepths = new Map();
 
         function computeRawDepth(n, depth) {
           rawDepths.set(n.sha, depth);
-          const key = self.getNodeEquivalenceKey(n, self.nodeStates[n.sha] || {});
-          if (key) shaKeyMap.set(n.sha, key);
+          const keyParts = self.getNodeEquivalenceKey(n, self.nodeStates[n.sha] || {});
+          if (keyParts && keyParts.length) {
+            shaKeyMap.set(n.sha, keyParts.join(','));
+            shaKeyPartsMap.set(n.sha, keyParts);
+          }
           const children = childrenOf.get(n.sha) || [];
           children.forEach(c => computeRawDepth(c, depth + 1));
         }
@@ -1928,6 +1932,7 @@ const app = createApp({
             sha: n.sha,
             node: n,
             milestoneKey: shaKeyMap.get(n.sha) || null,
+            milestoneKeyParts: shaKeyPartsMap.get(n.sha) || null,
             children: paddedChildren,
           };
         }
@@ -1981,15 +1986,14 @@ const app = createApp({
             if (!rankInfoMap.has(d.data.milestoneKey)) {
               rankInfoMap.set(d.data.milestoneKey, {
                 x: pos.x,
-                label: d.data.milestoneKey,
+                parts: d.data.milestoneKeyParts || [],
               });
             }
           }
         });
 
-        rankInfoMap.forEach(({ x, label }) => {
+        rankInfoMap.forEach(({ x, parts }) => {
           const lineX = x - nodeW / 2 - 25;
-          const textLabel = label.length > 28 ? label.slice(0, 26) + '…' : label;
 
           guideG.append('line')
             .attr('class', 'guide-line')
@@ -2000,27 +2004,39 @@ const app = createApp({
             .attr('stroke-dasharray', '6,4')
             .attr('stroke-width', 2.0);
 
-          // Top label text
-          guideG.append('text')
+          // Top label text (stacked tspans)
+          const topText = guideG.append('text')
             .attr('class', 'guide-label-top')
             .attr('x', lineX)
             .attr('y', 0)
             .attr('text-anchor', 'middle')
             .attr('fill', 'var(--accent2)')
             .attr('font-size', '11px')
-            .attr('font-weight', '600')
-            .text(textLabel);
+            .attr('font-weight', '600');
 
-          // Bottom label text
-          guideG.append('text')
+          parts.forEach((p, idx) => {
+            topText.append('tspan')
+              .attr('x', lineX)
+              .attr('dy', idx === 0 ? 0 : 14)
+              .text(p);
+          });
+
+          // Bottom label text (stacked tspans)
+          const botText = guideG.append('text')
             .attr('class', 'guide-label-bottom')
             .attr('x', lineX)
             .attr('y', 0)
             .attr('text-anchor', 'middle')
             .attr('fill', 'var(--accent2)')
             .attr('font-size', '11px')
-            .attr('font-weight', '600')
-            .text(textLabel);
+            .attr('font-weight', '600');
+
+          parts.forEach((p, idx) => {
+            botText.append('tspan')
+              .attr('x', lineX)
+              .attr('dy', idx === 0 ? 0 : 14)
+              .text(p);
+          });
         });
 
         this.updateMilestoneGuidesViewport();
