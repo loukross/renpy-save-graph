@@ -4,13 +4,24 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Remove redundant _DAG_CACHE memory layer (09b3bbf)
+- Prevent branch overwriting on restore and log all slot fork branches (7f541d5)
+
 ### Documentation
 
 - Add usage note against sharing save-graph libraries (21b98e1)
 
+### Features
+
+- Add multi-alignment popover box and game-space tag management (14cb898)
+
 ### Miscellaneous
 
 - Add automated CHANGELOG.md generation and commit-msg hook (f7792e2)
+- Add Dependabot, CodeQL, and release provenance workflows (953f9f0)
+- Reduce test matrix to Python 3.11, route changelog through a PR (57bd42f)
 
 ### Other
 
