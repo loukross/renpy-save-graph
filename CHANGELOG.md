@@ -40,8 +40,8 @@ All notable changes to this project are documented in this file.
 - Replace dagre-d3 layout with d3.tree() and add viewport-based decoration (ccd9a97)
 - Update README with save slot and quicksave details (3b9cfa0)
 - Replace monotonic_vars with a lineage validity check expression (793637c)
-- Merge branch 'main' of github.com:lucjross/renpy-save-graph (16d97e4)
-- Merge branch 'main' of github.com:lucjross/renpy-save-graph (4ec3e83)
+- Merge branch 'main' of github.com:loukross/renpy-save-graph (16d97e4)
+- Merge branch 'main' of github.com:loukross/renpy-save-graph (4ec3e83)
 
 ### Refactor
 
