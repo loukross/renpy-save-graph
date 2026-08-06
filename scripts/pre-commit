@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Git Pre-Commit Hook: Runs automated Pytest suite before allowing commits.
+
+echo "==================================================="
+echo "  Running Pre-Commit Automated Test Suite..."
+echo "==================================================="
+
+if command -v uv &> /dev/null; then
+    uv run pytest -v -m "not playwright"
+else
+    pytest -v -m "not playwright"
+fi
+
+TEST_RESULT=$?
+
+if [ $TEST_RESULT -ne 0 ]; then
+    echo ""
+    echo "[ERROR] Pre-commit tests failed! Commit aborted."
+    echo "Please fix the failing tests before committing."
+    exit 1
+fi
+
+echo ""
+echo "✅ All pre-commit tests passed cleanly!"
+exit 0

@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Scratch: copies of real game saves used for local testing.
+# The playthrough *library* repo is a SEPARATE repo created at runtime;
+# do not commit real saves into this (the app's source) repo.
+/samples/
+/scratch/
+*.save
+!docs/**/*.save

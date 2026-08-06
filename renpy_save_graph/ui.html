@@ -1,0 +1,2143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ren'Py Save Graph</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #0a0a14;
+  --bg2:       #0f0f22;
+  --bg3:       #141428;
+  --border:    #1e2248;
+  --accent:    #6080e8;
+  --accent2:   #8ab4f8;
+  --text:      #b8c8e0;
+  --text-dim:  #445566;
+  --gold:      #c8a020;
+  --red:       #c04040;
+  --green:     #50a060;
+  --red-val:   #c06060;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ---- header ---- */
+#header {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+#header h1 { font-size: 15px; font-weight: 700; color: var(--accent2); letter-spacing: .05em; }
+
+nav { display: flex; gap: 2px; }
+nav button {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  transition: background .15s, color .15s;
+}
+nav button:hover:not(:disabled) { background: var(--bg3); color: var(--text); }
+nav button.active { background: var(--bg3); color: var(--accent2); }
+nav button:disabled { opacity: .35; cursor: default; }
+
+.head-info { font-size: 12px; color: var(--text-dim); margin-left: auto; }
+#slot-select { width: auto; padding: 4px 8px; font-size: 13px; }
+
+.help-btn {
+  background: var(--bg3);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+.help-btn:hover {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+}
+
+/* ---- views ---- */
+.view { flex: 1; overflow: hidden; display: flex; min-height: 0; }
+
+/* ---- spaces view ---- */
+#spaces-view { justify-content: center; }
+.spaces-content { flex: 1; overflow-y: auto; padding: 24px 20px; }
+.spaces-inner { max-width: 540px; margin: 0 auto; }
+.spaces-inner h2 {
+  font-size: 13px; font-weight: 600; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 14px;
+}
+.space-picker-row { display: flex; gap: 8px; align-items: center; margin-bottom: 20px; }
+.space-picker-row select { flex: 1; }
+.section-divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+
+.empty { color: var(--text-dim); padding: 8px 0; }
+
+.field { margin-bottom: 12px; }
+.field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+.field label .optional { color: #334455; }
+
+.input-row { display: flex; gap: 6px; }
+.input-row input { flex: 1; }
+
+input, select, textarea {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  padding: 6px 9px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color .15s;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+input:disabled { opacity: .5; cursor: default; }
+select option { background: var(--bg3); }
+textarea { resize: vertical; }
+
+details.advanced { margin-bottom: 12px; }
+details.advanced summary {
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 8px;
+}
+details.advanced .field { margin-top: 8px; }
+
+.error { color: var(--red-val); font-size: 12px; margin-bottom: 10px; }
+
+.form-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 18px;
+  gap: 8px;
+}
+
+/* ---- buttons ---- */
+button, .btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; font-size: 13px; font-family: inherit; transition: opacity .15s, background .15s; }
+button:disabled { opacity: .4; cursor: default; }
+
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover:not(:disabled) { opacity: .85; }
+.btn-secondary { background: var(--bg3); border: 1px solid var(--border); color: var(--text); }
+.btn-secondary:hover:not(:disabled) { border-color: var(--accent); }
+.btn-danger { background: var(--bg3); border: 1px solid var(--border); color: var(--red-val); }
+.btn-danger:hover:not(:disabled) { background: #1e0a0a; border-color: var(--red); }
+
+/* ---- graph view ---- */
+#graph-view { flex-direction: column; }
+
+/* ---- bottom panel ---- */
+#bottom-panel {
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+#bottom-pulltab {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 2px;
+  background: var(--bg2);
+  flex-shrink: 0;
+}
+.bp-toggle {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+  margin-right: 4px;
+  border-radius: 3px;
+  font-family: inherit;
+}
+.bp-toggle:hover { color: var(--text); background: var(--bg3); }
+#bottom-resizer {
+  height: 5px;
+  flex-shrink: 0;
+  cursor: row-resize;
+  background: var(--border);
+  transition: background .15s;
+}
+#bottom-resizer:hover, #bottom-resizer.dragging { background: #3a4a8a; }
+#bottom-content {
+  height: 170px;
+  min-height: 60px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#graph-toolbar {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+#graph-toolbar .loading { font-size: 12px; color: var(--text-dim); }
+
+#graph-main { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+
+#graph-pane { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+#graph-canvas { flex: 1; overflow: hidden; position: relative; }
+svg#graph   { width: 100%; height: 100%; background: var(--bg); }
+svg#graph image { image-rendering: high-quality; image-rendering: -webkit-optimize-contrast; }
+
+/* dagre node styles */
+.node rect { fill: var(--bg3); stroke: #2a3060; stroke-width: 2; }
+.node.head    rect { stroke: var(--gold); stroke-width: 2.5; }
+.node.suspect rect { stroke: var(--red);  stroke-width: 2.5; }
+.node.selected rect { stroke: #50a0ff; stroke-width: 3; }
+.edgePath path { stroke: #2a3a6a; stroke-width: 1.5; fill: none; }
+
+/* ---- resizer ---- */
+#resizer {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: var(--border);
+  transition: background .15s;
+}
+#resizer:hover, #resizer.dragging { background: #3a4a8a; }
+
+/* ---- diff pane ---- */
+#diff-pane {
+  width: 600px;
+  min-width: 150px;
+  max-width: 900px;
+  background: #0d0d1e;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#diff-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#diff-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent2);
+  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.branch-badge {
+  font-size: 12px;
+  background: #1a2050;
+  border: 1px solid #2a3a8a;
+  color: var(--accent2);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+#diff-subtitle { font-size: 12px; color: var(--text-dim); word-break: break-all; }
+
+#diff-body { overflow-y: auto; flex: 1; padding: 8px 10px; }
+
+.diff-empty { color: var(--text-dim); font-size: 13px; padding: 10px 4px; }
+
+table.diff-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.diff-table th { color: var(--text-dim); font-weight: normal; text-align: left; padding: 2px 4px; border-bottom: 1px solid var(--border); }
+table.diff-table td { padding: 2px 4px; border-bottom: 1px solid #121220; vertical-align: top; word-break: break-all; }
+table.diff-table td.var { color: #7080a0; }
+table.diff-table td.old { color: var(--red-val); }
+table.diff-table td.new { color: var(--green); }
+
+/* ---- folder picker modal ---- */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.6);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+}
+.modal {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 480px; max-width: 95vw;
+  height: 480px;
+  display: flex; flex-direction: column;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px; font-weight: 600; color: var(--accent2);
+  flex-shrink: 0;
+}
+.modal-header button { background: none; border: none; color: var(--text-dim); font-size: 17px; cursor: pointer; padding: 0 4px; }
+.modal-header button:hover { color: var(--text); }
+.modal-body {
+  overflow-y: scroll;
+  flex: 1;
+  padding: 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: #2a3060 var(--bg2);
+}
+.modal-body::-webkit-scrollbar { width: 6px; }
+.modal-body::-webkit-scrollbar-track { background: var(--bg2); }
+.modal-body::-webkit-scrollbar-thumb { background: #2a3060; border-radius: 3px; }
+.modal-body::-webkit-scrollbar-thumb:hover { background: #3a4a8a; }
+.tree-row {
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex; align-items: center; gap: 6px;
+  border-radius: 4px;
+  margin: 1px 6px;
+  user-select: none;
+  transition: background .1s;
+}
+.tree-row:hover    { background: var(--bg3); }
+.tree-row.selected { background: #1a2050; color: var(--accent2); }
+.tree-toggle {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-dim);
+  transition: color .1s;
+}
+.tree-row:hover .tree-toggle { color: var(--accent); }
+.tree-row.selected .tree-toggle { color: var(--accent2); }
+.modal-footer {
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  display: flex; gap: 8px; justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+/* restore bar */
+#restore-bar {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
+}
+#restore-bar input { flex: 1; padding: 4px 8px; font-size: 12px; }
+
+/* toast */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  pointer-events: none;
+  transition: opacity .3s;
+}
+.toast.hidden { opacity: 0; }
+#note-overlay {
+  position: fixed;
+  z-index: 200;
+  width: 326px;
+  background: var(--bg2);
+  border: 1px solid var(--accent);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  padding: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.5);
+}
+#note-overlay textarea {
+  background: var(--bg2);
+  color: var(--text);
+  border: none;
+  outline: none;
+  font-size: 14px;
+  line-height: 1.4;
+  padding: 2px 4px;
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- header -->
+  <div id="header">
+    <h1>Ren'Py Save Graph</h1>
+    <nav>
+      <button :class="{active: view==='spaces'}" @click="view='spaces'">Spaces</button>
+      <button :class="{active: view==='graph'}" :disabled="!selectedSpaceId" @click="openGraph(selectedSpaceId)">Graph</button>
+    </nav>
+    <select id="slot-select"
+            v-if="view==='graph' && availableSlots.length"
+            v-model="selectedSlot"
+            @change="loadGraph()">
+      <option v-for="s in availableSlots" :key="s" :value="s">{{ s }}</option>
+    </select>
+    <span v-if="view==='graph' && graphData && graphData.head" class="head-info">HEAD {{ graphData.head.slice(0,7) }}</span>
+  </div>
+
+  <!-- spaces view -->
+  <div v-show="view==='spaces'" class="view" id="spaces-view">
+    <div class="spaces-content">
+      <div class="spaces-inner">
+        <h2>Game Spaces</h2>
+
+        <!-- no spaces yet -->
+        <div v-if="!spaces.length && !spaceForm.isNew">
+          <p class="empty">No game spaces yet.</p>
+          <button class="btn-primary" style="margin-top:12px" @click="startNewSpace()">Create space</button>
+        </div>
+
+        <!-- picker row -->
+        <div v-if="spaces.length" class="space-picker-row">
+          <select v-model="selectedSpaceId" @change="onSpaceSelected()">
+            <option v-for="s in spaces" :key="s.id" :value="s.id">{{ s.label || s.id }}</option>
+          </select>
+          <button class="btn-secondary" @click="startNewSpace()">New…</button>
+        </div>
+
+        <!-- config form (new or existing) -->
+        <template v-if="spaceForm.isNew || selectedSpaceId">
+          <hr class="section-divider" />
+          <h2>{{ spaceForm.isNew ? 'New space' : 'Space configuration' }}</h2>
+
+          <div class="field">
+            <label>Label <span class="optional">(optional)</span></label>
+            <input v-model="spaceForm.label" placeholder="My game" />
+          </div>
+
+          <div class="field">
+            <label>Saves directory</label>
+            <div class="input-row">
+              <input v-model="spaceForm.saves_dir" placeholder="/path/to/game/saves" />
+              <button class="btn-secondary" @click="openPicker('saves_dir')">Browse…</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Node hint format <span class="optional">(optional)</span></label>
+            <input v-model="spaceForm.node_hint_format"
+                   style="font-family:monospace" />
+          </div>
+
+          <div class="field">
+            <label>Slot exclude regex <span class="optional">(optional, e.g. autosave)</span></label>
+            <input v-model="spaceForm.slot_exclude" placeholder="autosave" style="font-family:monospace" />
+          </div>
+
+          <details class="advanced">
+            <summary>Advanced</summary>
+            <div class="field">
+              <label>Library path <span class="optional">(default: app data)</span></label>
+              <template v-if="spaceForm.isNew">
+                <div class="input-row">
+                  <input v-model="spaceForm.library_path"
+                         :placeholder="defaultDataDir ? defaultDataDir + '/libs/&lt;auto-id&gt;' : 'default'" />
+                  <button class="btn-secondary" @click="openPicker('library_path')">Browse…</button>
+                </div>
+              </template>
+              <template v-else>
+                <input :value="spaceForm.library_path" disabled />
+              </template>
+            </div>
+            <div class="field">
+              <label>Monotonic variables <span class="optional">(one per line)</span></label>
+              <textarea v-model="monotonic_vars_text" rows="5"
+                        style="font-family:monospace;font-size:12px"></textarea>
+            </div>
+          </details>
+
+          <div v-if="spaceForm.error" class="error">{{ spaceForm.error }}</div>
+
+          <div class="form-actions">
+            <button v-if="!spaceForm.isNew && selectedSpaceId"
+                    class="btn-danger"
+                    @click="deleteSpace()">Delete space</button>
+            <div v-else></div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button v-if="!spaceForm.isNew && selectedSpaceId"
+                      class="btn-secondary"
+                      @click="openGraph(selectedSpaceId)">View Graph →</button>
+              <button class="btn-primary"
+                      :disabled="spaceForm.saving || !spaceForm.saves_dir"
+                      @click="spaceForm.isNew ? addSpace() : saveSpaceConfig()">
+                {{ spaceForm.saving
+                    ? (spaceForm.isNew ? 'Creating…' : 'Saving…')
+                    : (spaceForm.isNew ? 'Create space' : 'Save') }}
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- graph view -->
+  <div v-show="view==='graph'" class="view" id="graph-view">
+    <div id="graph-toolbar">
+      <button class="btn-secondary" @click="loadGraph" :disabled="graphLoading">↺ Refresh</button>
+      <button class="btn-secondary" @click="ingest"    :disabled="graphLoading">⬇ Ingest</button>
+      <span v-if="graphLoading" class="loading">Loading…</span>
+      <span v-else-if="watcher" style="font-size:13px;color:var(--green)">● Watching</span>
+
+      <div style="position:relative;display:inline-block">
+        <button class="btn-secondary" @click="toggleJumpMenu">🎯 Jump to…</button>
+        <div v-if="jumpMenuOpen"
+             style="position:absolute;top:100%;left:0;margin-top:6px;z-index:250;width:300px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px;box-shadow:0 8px 24px rgba(0,0,0,0.6)">
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <button class="btn-secondary" style="justify-content:flex-start;font-size:13px;padding:6px 10px" @click="jumpToHead">📍 Current Head (Active Save)</button>
+            <button class="btn-secondary" style="justify-content:flex-start;font-size:13px;padding:6px 10px" @click="jumpToRoot">🌱 Root (Beginning)</button>
+            <div style="border-top:1px solid var(--border);margin:4px 0"></div>
+            <label style="font-size:13px;font-weight:600;color:var(--text-dim)">📅 Jump to Date Range</label>
+            <div style="display:flex;gap:4px">
+              <button class="btn-secondary" style="font-size:12px;padding:2px 8px" :style="jumpDatePreset==='today' ? 'border-color:var(--accent);color:var(--accent2)' : ''" @click="jumpToDatePreset('today')">Today</button>
+              <button class="btn-secondary" style="font-size:12px;padding:2px 8px" :style="jumpDatePreset==='3days' ? 'border-color:var(--accent);color:var(--accent2)' : ''" @click="jumpToDatePreset('3days')">3 Days</button>
+              <button class="btn-secondary" style="font-size:12px;padding:2px 8px" :style="jumpDatePreset==='7days' ? 'border-color:var(--accent);color:var(--accent2)' : ''" @click="jumpToDatePreset('7days')">7 Days</button>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+              <input type="date" v-model="jumpDateFrom" style="font-size:13px;padding:3px 6px;flex:1" />
+              <span style="font-size:13px;color:var(--text-dim)">to</span>
+              <input type="date" v-model="jumpDateTo" style="font-size:13px;padding:3px 6px;flex:1" />
+            </div>
+            <button class="btn-primary" style="margin-top:6px;justify-content:center;font-size:13px" @click="applyDateJump">Jump to Range</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="graph-main">
+      <div id="graph-pane">
+        <div id="graph-canvas">
+          <button class="btn-secondary"
+                  :style="autoSelectNewNodes ? 'border-color:var(--accent);color:var(--accent2);background:var(--bg3)' : 'color:var(--text-dim)'"
+                  style="position:absolute;top:12px;right:12px;z-index:200;padding:4px 10px;font-size:12px;border-radius:16px;box-shadow:0 4px 12px rgba(0,0,0,0.4)"
+                  @click="autoSelectNewNodes = !autoSelectNewNodes"
+                  :title="autoSelectNewNodes ? 'Auto-select on add: ENABLED' : 'Auto-select on add: DISABLED'">
+            {{ autoSelectNewNodes ? '⚡ Auto-select on add' : 'Auto-select on add' }}
+          </button>
+          <svg ref="graphSvg" id="graph"><g/></svg>
+          <div v-if="!graphLoading && graphData && !graphData.nodes.length"
+               style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:14px;pointer-events:none">
+            No saves yet
+          </div>
+          <div v-if="!graphLoading && !selectedSlot"
+               style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:14px;pointer-events:none">
+            No slots found in saves directory
+          </div>
+        </div>
+        <div style="padding:10px 12px;border-top:1px solid var(--border);flex-shrink:0;background:var(--bg2)">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <!-- Left Column: Sort Controls -->
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <label style="font-size:12px;font-weight:600;color:var(--text-dim)">📅 Sort Controls</label>
+              <div style="display:flex;align-items:center;gap:6px">
+                <label style="font-size:13px;color:var(--text-dim);white-space:nowrap">Base Sort:</label>
+                <select v-model="graphBaseSort" @change="renderGraph" style="width:auto;padding:3px 6px;font-size:13px">
+                  <option value="chrono">📅 Chronological</option>
+                  <option value="jaccard">🧬 Jaccard Leaf Similarity</option>
+                </select>
+                <button class="btn-secondary" style="padding:3px 6px;font-size:13px"
+                        :title="graphBaseDir === 'asc' ? 'Ascending' : 'Descending'"
+                        @click="toggleBaseDir">{{ graphBaseDir === 'asc' ? '↓' : '↑' }}</button>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <label style="font-size:13px;color:var(--text-dim);white-space:nowrap">Secondary:</label>
+                <div style="position:relative;flex:1;display:flex;align-items:center">
+                  <input v-model="graphOrderByExpr"
+                         placeholder="e.g. score DESC, day ASC"
+                         @keydown.enter="loadGraph"
+                         style="width:100%;padding:3px 30px 3px 6px;font-size:13px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px" />
+                  <button class="btn-secondary"
+                          title="Sort History"
+                          @click="sortHistoryMenuOpen = !sortHistoryMenuOpen"
+                          style="position:absolute;right:2px;padding:0 6px;font-size:15px;font-weight:bold;height:22px;border:none;background:transparent;color:var(--text);cursor:pointer">▾</button>
+                  <div v-if="sortHistoryMenuOpen"
+                       style="position:absolute;bottom:100%;left:0;right:0;margin-bottom:6px;z-index:250;max-height:260px;overflow-y:auto;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,0.6)">
+                    <div style="font-size:11px;font-weight:600;color:var(--text-dim);padding:4px 6px;border-bottom:1px solid var(--border);margin-bottom:4px">📜 Recent Sorts (up to 20)</div>
+                    <div v-if="!currentSortHistory.length" style="padding:8px 6px;font-size:12px;color:var(--text-dim);text-align:center">No sort history yet</div>
+                    <div v-else v-for="(item, idx) in currentSortHistory" :key="idx"
+                         style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px;color:var(--text);gap:8px"
+                         @click="graphOrderByExpr = item; loadGraph(); sortHistoryMenuOpen = false">
+                      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">{{ item }}</span>
+                      <button @click.stop="removeFromSortHistory(idx)"
+                              title="Delete from history"
+                              style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:16px;font-weight:bold;padding:0 4px;line-height:1">×</button>
+                    </div>
+                  </div>
+                </div>
+                <button class="btn-secondary" style="padding:3px 8px;font-size:13px;flex-shrink:0" @click="loadGraph">Sort</button>
+              </div>
+            </div>
+
+            <!-- Right Column: Filter Controls -->
+            <div style="display:flex;flex-direction:column;gap:6px;position:relative">
+              <div style="display:flex;align-items:center;gap:6px">
+                <label style="font-size:12px;font-weight:600;color:var(--text-dim)">🔍 Graph Filter Expression</label>
+                <button class="help-btn" @click.stop="toggleHelp('filter', $event)" title="Expression Help">?</button>
+              </div>
+
+              <div style="display:flex;align-items:center;gap:4px">
+                <div style="position:relative;flex:1;display:flex;align-items:center">
+                  <input v-model="filterExpr"
+                         placeholder="e.g. score >= 5 && day != 0"
+                         @keydown.enter="applyFilter"
+                         style="width:100%;padding:3px 30px 3px 6px;font-size:13px;font-family:monospace;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px" />
+                  <button class="btn-secondary"
+                          title="Filter History"
+                          @click="filterHistoryMenuOpen = !filterHistoryMenuOpen"
+                          style="position:absolute;right:2px;padding:0 6px;font-size:15px;font-weight:bold;height:22px;border:none;background:transparent;color:var(--text);cursor:pointer">▾</button>
+                  <div v-if="filterHistoryMenuOpen"
+                       style="position:absolute;bottom:100%;left:0;right:0;margin-bottom:6px;z-index:250;max-height:260px;overflow-y:auto;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,0.6)">
+                    <div style="font-size:11px;font-weight:600;color:var(--text-dim);padding:4px 6px;border-bottom:1px solid var(--border);margin-bottom:4px">📜 Recent Filters (up to 20)</div>
+                    <div v-if="!currentFilterHistory.length" style="padding:8px 6px;font-size:12px;color:var(--text-dim);text-align:center">No filter history yet</div>
+                    <div v-else v-for="(item, idx) in currentFilterHistory" :key="idx"
+                         style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px;border-radius:4px;cursor:pointer;font-family:monospace;font-size:12px;color:var(--text);gap:8px"
+                         @click="filterExpr = item; applyFilter(); filterHistoryMenuOpen = false">
+                      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">{{ item }}</span>
+                      <button @click.stop="removeFromFilterHistory(idx)"
+                              title="Delete from history"
+                              style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:16px;font-weight:bold;padding:0 4px;line-height:1">×</button>
+                    </div>
+                  </div>
+                </div>
+                <button class="btn-secondary" style="padding:3px 8px;font-size:13px;flex-shrink:0" @click="applyFilter">Filter</button>
+                <button v-if="filterActive" class="btn-secondary" style="padding:3px 8px;font-size:13px;flex-shrink:0" @click="clearFilter">✕ Clear</button>
+              </div>
+              <span v-if="filterError" style="font-size:12px;color:#e06060;display:block">{{ filterError }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="resizer" ref="resizer"></div>
+      <div id="diff-pane" ref="diffPane">
+        <div id="diff-header">
+          <div id="diff-title">
+            <template v-if="selectedNode">
+              {{ selectedNode.short }}
+              <span v-for="b in (selectedNode.branches || (selectedNode.branch ? [selectedNode.branch] : []))" :key="b" class="branch-badge">{{ b }}</span>
+            </template>
+            <template v-else>Select a save point</template>
+          </div>
+          <div id="diff-subtitle">{{ selectedNode ? selectedNode.subject : '' }}</div>
+        </div>
+        <div v-if="selectedNode" id="restore-bar">
+          <button v-if="!selectedNode.is_head" class="btn-secondary" :disabled="restore.busy" @click="doRestore">
+            {{ restore.busy ? 'Restoring…' : '← Restore to Game' }}
+          </button>
+          <button class="btn-danger"
+                  :disabled="selectedNode.is_head || !selectedNode.parents.length"
+                  :title="selectedNode.is_head ? 'Cannot delete active save point' : (!selectedNode.parents.length ? 'Cannot delete root node' : 'Delete node')"
+                  @click="openDeleteModal">🗑 Delete node</button>
+        </div>
+        <div id="diff-body">
+          <div v-if="diffLoading"                            class="diff-empty">Loading…</div>
+          <div v-else-if="!selectedNode"                     class="diff-empty">Click a node to see what changed.</div>
+          <div v-else-if="!selectedNode.parents.length"      class="diff-empty">Root commit — no parent to diff against.</div>
+          <div v-else-if="!diffData"                         class="diff-empty">—</div>
+          <div v-else-if="!filteredDiffChanges.length"       class="diff-empty">No variable changes{{ diffVarFilter ? ' (filter active)' : '' }}.</div>
+          <table v-else class="diff-table">
+            <thead><tr><th>Variable</th><th>Before</th><th>After</th></tr></thead>
+            <tbody>
+              <tr v-for="c in filteredDiffChanges" :key="c.var">
+                <td class="var">{{ c.var }}</td>
+                <td class="old">{{ fmtVal(c.old) }}</td>
+                <td class="new">{{ fmtVal(c.new) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="padding:8px 10px;border-top:1px solid var(--border);flex-shrink:0;position:relative">
+          <div style="display:flex;align-items:center;justify-space-between;margin-bottom:4px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <label style="font-size:12px;font-weight:600;color:var(--text-dim)">🔍 Variable Filter Regex</label>
+              <button class="help-btn" @click.stop="toggleHelp('regex', $event)" title="Regex Help">?</button>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:4px">
+            <input v-model="diffVarFilter"
+                   placeholder="e.g. ^karma|money$"
+                   style="flex:1;padding:3px 8px;font-size:13px;font-family:monospace;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px" />
+            <button class="btn-secondary" style="padding:3px 8px;font-size:13px;flex-shrink:0"
+                    :style="diffVarFilter==='^[^_]' ? 'border-color:var(--accent)' : ''"
+                    @click="diffVarFilter='^[^_]'">Game vars</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- bottom panel -->
+    <div id="bottom-panel">
+      <div id="bottom-resizer" ref="bottomResizer"></div>
+      <div id="bottom-pulltab">
+        <button class="bp-toggle" @click="bottomPanel.open = !bottomPanel.open">
+          {{ bottomPanel.open ? '▼' : '▲' }}
+        </button>
+        <span style="font-size:13px;color:var(--text-dim)">Inspector</span>
+      </div>
+      <div v-show="bottomPanel.open" id="bottom-content">
+        <div style="padding:6px 12px;flex-shrink:0;position:relative">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <label style="font-size:12px;font-weight:600;color:var(--text-dim)">🔍 Variable Filter Regex</label>
+            <button class="help-btn" @click.stop="toggleHelp('regex', $event)" title="Regex Help">?</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px">
+            <input v-model="inspectorFilter"
+                   placeholder="e.g. ^karma|money$"
+                   style="flex:1;padding:3px 8px;font-size:13px;font-family:monospace;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px" />
+            <button class="btn-secondary" style="padding:3px 8px;font-size:13px;flex-shrink:0"
+                    :style="inspectorFilter==='^[^_]' ? 'border-color:var(--accent)' : ''"
+                    @click="inspectorFilter='^[^_]'">Game vars</button>
+          </div>
+        </div>
+        <div style="overflow-y:auto;flex:1;padding:0 12px 8px">
+          <div v-if="!nodeState" style="color:var(--text-dim);font-size:14px;padding:8px 0">
+            Select a node to inspect its state.
+          </div>
+          <table v-else class="diff-table" style="font-size:13px">
+            <thead><tr><th style="width:20px"></th><th style="width:20px"></th><th>Variable</th><th>Value</th></tr></thead>
+            <tbody>
+              <tr v-for="[k, v] in inspectorRows" :key="k">
+                <td style="padding:2px 4px;width:20px;text-align:center">
+                  <button @click="toggleFavorite(k)"
+                          :title="isFavorite(k) ? 'Remove favorite' : 'Add favorite'"
+                          :style="{ background:'none', border:'none', cursor:'pointer', fontSize:'16px', padding:0, lineHeight:1, color: isFavorite(k) ? '#ffcc00' : '#445566' }">{{ isFavorite(k) ? '★' : '☆' }}</button>
+                </td>
+                <td style="padding:2px 4px;width:20px;text-align:center">
+                  <button @click="addToFilter(k, v)"
+                          title="Add to filter"
+                          style="background:none;border:none;cursor:pointer;font-size:16px;font-weight:bold;padding:0;line-height:1;color:#607090">+</button>
+                </td>
+                <td class="var">{{ k }}</td>
+                <td>{{ fmtVal(v) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="noteOverlay.open" id="note-overlay"
+       :style="{ left: noteOverlay.x + 'px', top: noteOverlay.y + 'px', transform: `scale(${noteOverlay.scale})`, transformOrigin: 'top left' }"
+       @mousedown.stop>
+    <textarea ref="noteTextarea"
+              v-model="noteText"
+              placeholder="Add a note…"
+              @blur="saveNoteAndClose"
+              @keydown.enter.exact.prevent="saveNoteAndClose"
+              @keydown.esc.prevent="closeNote"
+              @input="$event.target.style.height='auto'; $event.target.style.height=$event.target.scrollHeight+'px'"
+              style="width:100%;min-height:48px;height:48px;resize:none;overflow:hidden"></textarea>
+  </div>
+
+  <div class="toast" :class="{hidden: !toast}" v-text="toast"></div>
+
+  <!-- remove space modal -->
+  <div v-if="removeSpaceModal.open" class="modal-overlay" @click.self="removeSpaceModal.open=false">
+    <div class="modal" style="height:auto">
+      <div class="modal-header">
+        <span>Remove space</span>
+        <button @click="removeSpaceModal.open=false">×</button>
+      </div>
+      <div style="padding:16px 20px">
+        <div style="margin-bottom:14px">
+          Remove <strong style="color:var(--text)">{{ removeSpaceModal.space?.label || removeSpaceModal.space?.id }}</strong>?
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-dim)">
+          <input type="checkbox" v-model="removeSpaceModal.deleteLibrary" style="width:auto" />
+          Permanently delete the git library
+        </label>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" @click="removeSpaceModal.open=false">Cancel</button>
+        <button class="btn-danger" @click="confirmRemoveSpace()">Remove</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- delete node modal -->
+  <div v-if="deleteNodeModal.open" class="modal-overlay" @click.self="deleteNodeModal.open=false">
+    <div class="modal" style="height:auto;max-height:90vh;width:480px">
+      <div class="modal-header">
+        <span>🗑 Delete Save Node ({{ deleteNodeModal.node ? deleteNodeModal.node.short : '' }})</span>
+        <button @click="deleteNodeModal.open=false">✕</button>
+      </div>
+      <div style="padding:16px;font-size:14px;color:var(--text)">
+        <p style="margin-bottom:12px">
+          Are you sure you want to delete node <strong>{{ deleteNodeModal.node ? deleteNodeModal.node.short : '' }}</strong>? This is permanent.
+        </p>
+        <div style="margin-bottom:16px;background:var(--bg3);padding:10px;border-radius:4px;border:1px solid var(--border)">
+          <div style="font-weight:600;margin-bottom:4px;color:var(--accent2)">{{ deleteNodeModal.node ? deleteNodeModal.node.subject : '' }}</div>
+          <div v-if="deleteNodeModal.node && deleteNodeModal.node.hint" style="font-size:12px;color:var(--text-dim)">{{ deleteNodeModal.node.hint }}</div>
+        </div>
+        <label style="font-weight:600;display:block;margin-bottom:8px">Downstream saves handling:</label>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">
+            <input type="radio" v-model="deleteNodeModal.strategy" value="reparent" style="margin-top:3px;width:auto" />
+            <div>
+              <strong>🔗 Reparent following saves onto parent</strong>
+              <div style="font-size:12px;color:var(--text-dim)">Splices out this node and connects downstream saves directly to the parent node.</div>
+            </div>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:8px"
+                 :style="deleteNodeModal.hasCurrentHeadDownstream ? 'opacity:0.5;cursor:not-allowed' : 'cursor:pointer'">
+            <input type="radio" v-model="deleteNodeModal.strategy" value="cascade"
+                   :disabled="deleteNodeModal.hasCurrentHeadDownstream"
+                   style="margin-top:3px;width:auto" />
+            <div>
+              <strong>✂️ Delete all following saves</strong>
+              <div style="font-size:12px;color:var(--text-dim)">Deletes this save node and all saves that follow it on these branches.</div>
+              <div v-if="deleteNodeModal.hasCurrentHeadDownstream" style="font-size:12px;color:#e06060;margin-top:2px">
+                ⚠ Disabled because your active save point follows this one.
+              </div>
+            </div>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" @click="deleteNodeModal.open=false">Cancel</button>
+        <button class="btn-danger" :disabled="deleteNodeModal.busy" @click="confirmDeleteNode">
+          {{ deleteNodeModal.busy ? 'Deleting…' : 'Delete Node' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- folder picker modal -->
+  <div v-if="picker.open" class="modal-overlay" @click.self="picker.open=false">
+    <div class="modal">
+      <div class="modal-header">
+        <span>Select folder</span>
+        <button @click="picker.open=false">×</button>
+      </div>
+      <div class="modal-body">
+        <div v-if="picker.loading" class="tree-row"><span class="tree-toggle">⋯</span>Loading…</div>
+        <div
+          v-for="row in pickerFlat" :key="row.node.path"
+          class="tree-row"
+          :class="{selected: picker.selected === row.node.path}"
+          :style="{paddingLeft: (8 + row.depth * 18) + 'px'}"
+          @click="pickerSelect(row.node)"
+        >
+          <span class="tree-toggle" @click.stop="pickerToggle(row.node)">
+            <template v-if="row.node.loading">⋯</template>
+            <template v-else-if="row.node.expanded">▼</template>
+            <template v-else>▶</template>
+          </span>
+          {{ row.node.name }}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" @click="picker.open=false">Cancel</button>
+        <button class="btn-primary" :disabled="!picker.selected" @click="selectFolder(picker.selected)">
+          Select folder
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Single Shared Floating Help Popover -->
+  <div v-if="helpPopover.open" class="help-popover" @click.stop
+       :style="{
+         position: 'fixed',
+         left: helpPopover.left,
+         bottom: helpPopover.bottom,
+         zIndex: 9999,
+         width: '360px',
+         background: 'var(--bg2)',
+         border: '1px solid var(--border)',
+         borderRadius: '8px',
+         padding: '12px',
+         boxShadow: '0 12px 32px rgba(0,0,0,0.7)'
+       }">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:6px">
+      <span style="font-size:13px;font-weight:600;color:var(--accent)">
+        {{ helpPopover.type === 'filter' ? '🔍 Graph Filter Expressions' : '🔍 Regex Filter Basics' }}
+      </span>
+      <button @click="helpPopover.open = false" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;font-weight:bold">✕ Close</button>
+    </div>
+
+    <!-- Filter Help Content -->
+    <div v-if="helpPopover.type === 'filter'" style="font-size:12px;color:var(--text);line-height:1.5;display:flex;flex-direction:column;gap:8px">
+      <div><strong>Functions:</strong>
+        <ul style="margin:4px 0 0 16px;padding:0">
+          <li><code>delta('var')</code> — Change in value vs parent node</li>
+          <li><code>changed('var')</code> — True if variable changed</li>
+          <li><code>changed('var', from, to)</code> — Changed from value to value</li>
+          <li><code>added('var')</code> — True if newly created on this node</li>
+        </ul>
+      </div>
+      <div><strong>Comparisons & Logic:</strong>
+        <div style="margin-top:2px"><code>&gt;</code>, <code>&lt;</code>, <code>&gt;=</code>, <code>&lt;=</code>, <code>==</code>, <code>!=</code>, <code>&amp;&amp;</code> (AND), <code>||</code> (OR), <code>!</code> (NOT)</div>
+      </div>
+      <div style="background:var(--bg3);padding:6px;border-radius:4px;font-family:monospace;font-size:11px">
+        karma &gt;= 10 &amp;&amp; delta('money') &gt; 0
+      </div>
+    </div>
+
+    <!-- Regex Help Content -->
+    <div v-else-if="helpPopover.type === 'regex'" style="font-size:12px;color:var(--text);line-height:1.5;display:flex;flex-direction:column;gap:6px">
+      <div><code>karma</code> — Matches variables containing "karma"</div>
+      <div><code>^day</code> — Starts with "day" (e.g. <code>day_num</code>)</div>
+      <div><code>score$</code> — Ends with "score"</div>
+      <div><code>(karma|gold)</code> — Matches "karma" OR "gold"</div>
+      <div><code>^[^_]</code> — Excludes system vars starting with <code>_</code></div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Note: Matching is case-insensitive by default.</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+<script src="https://d3js.org/d3.v5.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dagre-d3/0.6.4/dagre-d3.min.js"></script>
+<script src="https://unpkg.com/jsep@1.3.9/dist/iife/jsep.iife.min.js"></script>
+<script>
+const { createApp, nextTick } = Vue;
+
+const app = createApp({
+  data() {
+    return {
+      view: 'spaces',
+      spaces: [],
+      selectedSpaceId: null,
+      selectedSlot: '',
+      availableSlots: [],
+      spaceForm: {
+        label: '',
+        saves_dir: '',
+        library_path: '',
+        node_hint_format: '',
+        slot_exclude: '',
+        monotonic_vars: [],
+        saving: false,
+        error: '',
+        isNew: false,
+      },
+      graphData: null,
+      selectedNode: null,
+      diffData: null,
+      diffLoading: false,
+      graphLoading: false,
+      nodeState: null,
+      noteText: '',
+      noteOverlay: { open: false, sha: null, x: 0, y: 0, scale: 1 },
+      graphBaseSort: 'chrono',
+      graphBaseDir: 'asc',
+      graphOrderByExpr: '',
+      jumpMenuOpen: false,
+      jumpDatePreset: 'all',
+      jumpDateFrom: '',
+      jumpDateTo: '',
+      filterExpr: '',
+      filterActive: false,
+      filterParsed: null,
+      filterError: '',
+      filterHistoryMenuOpen: false,
+      sortHistoryMenuOpen: false,
+      nodeStates: {},
+      nodeDiffs: {},
+      nodeThumbnails: {},
+      inspectorFilter: '^[^_]',
+      diffVarFilter: '^[^_]',
+      autoSelectNewNodes: false,
+      helpPopover: { open: false, type: null, left: '0px', bottom: '0px' },
+      bottomPanel: { open: false },
+      watcher: null,
+      restore: { confirming: false, branchName: '', busy: false },
+      deleteNodeModal: { open: false, node: null, strategy: 'reparent', hasCurrentHeadDownstream: false, busy: false },
+      removeSpaceModal: { open: false, space: null, deleteLibrary: false },
+      picker: {
+        open: false,
+        target: 'saves_dir',
+        nodes: [],
+        selected: null,
+        loading: false,
+      },
+      defaultDataDir: '',
+      toast: '',
+      _toastTimer: null,
+    };
+  },
+
+  watch: {
+    view(newVal) {
+      if (newVal !== 'graph') this.stopWatcher();
+    },
+  },
+
+  computed: {
+    currentSortHistory() {
+      const s = this.spaces.find(x => x.id === this.selectedSpaceId);
+      return (s && s.sort_history) || [];
+    },
+    currentFilterHistory() {
+      const s = this.spaces.find(x => x.id === this.selectedSpaceId);
+      return (s && s.filter_history) || [];
+    },
+    monotonic_vars_text: {
+      get() { return this.spaceForm.monotonic_vars.join('\n'); },
+      set(v) { this.spaceForm.monotonic_vars = v.split('\n').map(s => s.trim()).filter(Boolean); },
+    },
+    filteredDiffChanges() {
+      if (!this.diffData) return [];
+      const raw = this.diffVarFilter.trim();
+      if (!raw) return this.diffData.changes;
+      const patterns = raw.split(',').map(p => p.trim()).filter(Boolean);
+      try {
+        const regexes = patterns.map(p => new RegExp(p));
+        return this.diffData.changes.filter(c => regexes.some(r => r.test(c.var)));
+      } catch {
+        return this.diffData.changes;
+      }
+    },
+    inspectorRows() {
+      if (!this.nodeState) return [];
+      const favs = new Set(this.spaces.find(s => s.id === this.selectedSpaceId)?.favorite_vars || []);
+      const entries = Object.entries(this.nodeState.variables || {})
+        .sort((a, b) => {
+          const fa = favs.has(a[0]), fb = favs.has(b[0]);
+          if (fa !== fb) return fa ? -1 : 1;
+          return a[0].localeCompare(b[0]);
+        });
+      const raw = (this.inspectorFilter || '').trim();
+      if (!raw) return entries;
+      const patterns = raw.split(',').map(p => p.trim()).filter(Boolean);
+      try {
+        const regexes = patterns.map(p => new RegExp(p, 'i'));
+        return entries.filter(([k, v]) => regexes.some(r => r.test(k)));
+      } catch {
+        return entries;
+      }
+    },
+    pickerFlat() {
+      const result = [];
+      const walk = (nodes, depth) => {
+        for (const n of nodes) {
+          result.push({ node: n, depth });
+          if (n.expanded && n.children) walk(n.children, depth + 1);
+        }
+      };
+      walk(this.picker.nodes, 0);
+      return result;
+    },
+  },
+
+  async mounted() {
+    await this.loadConfig();
+    if (this.spaces.length) {
+      this.selectedSpaceId = this.spaces[0].id;
+      this.onSpaceSelected();
+    }
+    window.addEventListener('click', (e) => {
+      if (!e.target.closest('.help-popover') && !e.target.closest('.help-btn')) {
+        this.helpPopover.open = false;
+      }
+    });
+    this.initResizer();
+    this.initBottomResizer();
+    const d = await fetch('/api/defaults').then(r => r.json());
+    this.defaultDataDir = d.data_dir;
+  },
+
+  methods: {
+    toggleHelp(type, event) {
+      if (this.helpPopover.open && this.helpPopover.type === type) {
+        this.helpPopover.open = false;
+        return;
+      }
+      const rect = event.currentTarget.getBoundingClientRect();
+      const popoverWidth = 360;
+      const left = Math.min(window.innerWidth - popoverWidth - 10, Math.max(10, rect.left - 180));
+      const bottom = window.innerHeight - rect.top + 8;
+      this.helpPopover = {
+        open: true,
+        type: type,
+        left: left + 'px',
+        bottom: bottom + 'px',
+      };
+    },
+    // -- config --
+    async loadConfig() {
+      const data = await fetch('/api/config').then(r => r.json());
+      this.spaces = data.spaces || [];
+    },
+
+    // -- space form --
+    onSpaceSelected() {
+      const space = this.spaces.find(s => s.id === this.selectedSpaceId);
+      if (!space) return;
+      this.spaceForm = {
+        label: space.label,
+        saves_dir: space.saves_dir,
+        library_path: space.library_path,
+        node_hint_format: space.node_hint_format,
+        slot_exclude: space.slot_exclude,
+        monotonic_vars: [...(space.monotonic_vars || [])],
+        saving: false,
+        error: '',
+        isNew: false,
+      };
+    },
+
+    startNewSpace() {
+      this.selectedSpaceId = null;
+      this.spaceForm = {
+        label: '', saves_dir: '', library_path: '',
+        node_hint_format: '{_last_say_who}: {_last_say_what}',
+        slot_exclude: '',
+        monotonic_vars: [],
+        saving: false, error: '', isNew: true,
+      };
+    },
+
+    async addSpace() {
+      this.spaceForm.error = '';
+      if (!this.spaceForm.saves_dir) {
+        this.spaceForm.error = 'Saves directory is required.';
+        return;
+      }
+      this.spaceForm.saving = true;
+      try {
+        const body = {
+          label: this.spaceForm.label,
+          saves_dir: this.spaceForm.saves_dir,
+          library_path: this.spaceForm.library_path,
+          node_hint_format: this.spaceForm.node_hint_format,
+          slot_exclude: this.spaceForm.slot_exclude,
+        };
+        if (this.spaceForm.monotonic_vars.length) {
+          body.monotonic_vars = this.spaceForm.monotonic_vars;
+        }
+        const resp = await fetch('/api/spaces', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+          const e = await resp.json().catch(() => ({}));
+          throw new Error(e.detail || resp.statusText);
+        }
+        const space = await resp.json();
+        await this.loadConfig();
+        this.selectedSpaceId = space.id;
+        this.onSpaceSelected();
+        this.showToast('Space created.');
+      } catch (e) {
+        this.spaceForm.error = String(e);
+      } finally {
+        this.spaceForm.saving = false;
+      }
+    },
+
+    async saveSpaceConfig() {
+      if (!this.selectedSpaceId) return;
+      this.spaceForm.saving = true;
+      this.spaceForm.error = '';
+      try {
+        const resp = await fetch(`/api/spaces/${this.selectedSpaceId}/config`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            label: this.spaceForm.label,
+            saves_dir: this.spaceForm.saves_dir,
+            node_hint_format: this.spaceForm.node_hint_format,
+            slot_exclude: this.spaceForm.slot_exclude,
+            monotonic_vars: this.spaceForm.monotonic_vars,
+          }),
+        });
+        if (!resp.ok) throw new Error((await resp.json().catch(() => ({detail: resp.statusText}))).detail);
+        await this.loadConfig();
+        this.onSpaceSelected();
+        this.showToast('Space saved.');
+      } catch (e) {
+        this.spaceForm.error = String(e);
+      } finally {
+        this.spaceForm.saving = false;
+      }
+    },
+
+    deleteSpace() {
+      const space = this.spaces.find(s => s.id === this.selectedSpaceId);
+      if (space) this.removeSpaceModal = { open: true, space, deleteLibrary: false };
+    },
+
+    async confirmRemoveSpace() {
+      const { space, deleteLibrary } = this.removeSpaceModal;
+      this.removeSpaceModal.open = false;
+      await fetch(`/api/spaces/${space.id}?delete_library=${deleteLibrary}`, { method: 'DELETE' });
+      await this.loadConfig();
+      if (this.selectedSpaceId === space.id) {
+        this.selectedSpaceId = null;
+        this.graphData = null;
+        if (this.spaces.length) {
+          this.selectedSpaceId = this.spaces[0].id;
+          this.onSpaceSelected();
+        } else {
+          this.spaceForm = {
+            label: '', saves_dir: '', library_path: '',
+            node_hint_format: '', slot_exclude: '',
+            monotonic_vars: [], saving: false, error: '', isNew: false,
+          };
+        }
+      }
+      this.showToast('Space removed.');
+    },
+
+    // -- graph navigation --
+    async openGraph(spaceId) {
+      if (!spaceId) return;
+      this.selectedSpaceId = spaceId;
+      this.onSpaceSelected();
+      this.view = 'graph';
+      this.nodeState = null;
+      this.selectedNode = null;
+      this.diffData = null;
+      this.filterActive = false;
+      this.filterParsed = null;
+      this.filterExpr = '';
+      this.filterError = '';
+      await this.loadSlots();
+      if (this.selectedSlot) await this.loadGraph();
+      this.startWatcher(spaceId);
+    },
+
+    async loadSlots() {
+      if (!this.selectedSpaceId) return;
+      const data = await fetch(`/api/spaces/${this.selectedSpaceId}/slots`).then(r => r.json());
+      this.availableSlots = data.slots || [];
+      if (!this.selectedSlot || !this.availableSlots.includes(this.selectedSlot)) {
+        this.selectedSlot = this.availableSlots[0] || '';
+      }
+    },
+
+    toggleBaseDir() {
+      this.graphBaseDir = this.graphBaseDir === 'asc' ? 'desc' : 'asc';
+      this.renderGraph();
+    },
+
+    async loadGraph() {
+      if (!this.selectedSpaceId || !this.selectedSlot) return;
+      this.graphLoading = true;
+      this.selectedNode = null;
+      this.diffData = null;
+      this.nodeStates = {};
+      try {
+        const base = `/api/spaces/${this.selectedSpaceId}/slots/${this.selectedSlot}`;
+        const url = `${base}/graph?base_sort=${this.graphBaseSort}&base_dir=${this.graphBaseDir}&order_by=${encodeURIComponent(this.graphOrderByExpr)}`;
+        const [resp, shotResp] = await Promise.all([
+          fetch(url),
+          fetch(`${base}/screenshots`).then(r => r.json()).catch(() => ({})),
+        ]);
+        if (!resp.ok) throw new Error((await resp.json().catch(() => ({detail: resp.statusText}))).detail);
+        this.graphData = await resp.json();
+        this.nodeThumbnails = shotResp || {};
+        await this.loadAllStates();
+        await nextTick();
+        this.renderGraph();
+
+        if (this.graphOrderByExpr.trim()) {
+          const expr = this.graphOrderByExpr.trim();
+          const space = this.spaces.find(s => s.id === this.selectedSpaceId);
+          if (space) {
+            let history = [...(space.sort_history || [])];
+            history = [expr, ...history.filter(x => x !== expr)].slice(0, 20);
+            space.sort_history = history;
+            fetch(`/api/spaces/${this.selectedSpaceId}/config`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sort_history: history }),
+            });
+          }
+        }
+      } finally {
+        this.graphLoading = false;
+      }
+    },
+
+    toggleJumpMenu() {
+      this.jumpMenuOpen = !this.jumpMenuOpen;
+    },
+
+    jumpToHead() {
+      this.jumpMenuOpen = false;
+      if (!this.graphData || !this.graphData.nodes) return;
+      const headNode = this.graphData.nodes.find(n => n.is_head);
+      if (headNode) {
+        this.centerGraphOnNode(headNode.sha);
+      }
+    },
+
+    jumpToRoot() {
+      this.jumpMenuOpen = false;
+      if (!this.graphData || !this.graphData.nodes) return;
+      const rootNode = [...this.graphData.nodes].sort((a, b) => a.when - b.when)[0];
+      if (rootNode) {
+        this.centerGraphOnNode(rootNode.sha);
+      }
+    },
+
+    jumpToDatePreset(preset) {
+      this.jumpDatePreset = preset;
+      const now = new Date();
+      let fromDate = new Date();
+      if (preset === 'today') {
+        fromDate.setHours(0, 0, 0, 0);
+      } else if (preset === '3days') {
+        fromDate.setDate(now.getDate() - 3);
+      } else if (preset === '7days') {
+        fromDate.setDate(now.getDate() - 7);
+      } else {
+        return;
+      }
+      this.jumpDateFrom = fromDate.toISOString().slice(0, 10);
+      this.jumpDateTo = now.toISOString().slice(0, 10);
+      this.applyDateJump();
+    },
+
+    applyDateJump() {
+      this.jumpMenuOpen = false;
+      if (!this.graphData || !this.graphData.nodes) return;
+      let fromTs = 0;
+      let toTs = Infinity;
+      if (this.jumpDateFrom) {
+        fromTs = new Date(this.jumpDateFrom + 'T00:00:00').getTime() / 1000;
+      }
+      if (this.jumpDateTo) {
+        toTs = new Date(this.jumpDateTo + 'T23:59:59').getTime() / 1000;
+      }
+
+      const matching = this.graphData.nodes.filter(n => n.when >= fromTs && n.when <= toTs);
+      if (matching.length) {
+        this.centerGraphOnNodes(matching.map(n => n.sha));
+        this.showToast(`Found ${matching.length} save node(s) in date range`);
+      } else {
+        this.showToast('No save nodes found in selected date range');
+      }
+    },
+
+    centerGraphOnNode(sha) {
+      this.centerGraphOnNodes([sha]);
+    },
+
+    centerGraphOnNodes(shas) {
+      if (!this.g || !shas || !shas.length) return;
+      const self = this;
+      const svgEl = this.$refs.graphSvg;
+      if (!svgEl) return;
+      const svg = d3.select(svgEl);
+      const width = svgEl.clientWidth || 800;
+      const height = svgEl.clientHeight || 600;
+
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      let found = false;
+
+      shas.forEach(sha => {
+        const nodeObj = self.g.node(sha);
+        if (nodeObj) {
+          found = true;
+          minX = Math.min(minX, nodeObj.x - nodeObj.width / 2);
+          maxX = Math.max(maxX, nodeObj.x + nodeObj.width / 2);
+          minY = Math.min(minY, nodeObj.y - nodeObj.height / 2);
+          maxY = Math.max(maxY, nodeObj.y + nodeObj.height / 2);
+        }
+      });
+
+      if (!found) return;
+
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+
+      const k = (shas.length === 1) ? 1.0 : Math.min(1.2, Math.max(0.4, Math.min((width - 100) / (maxX - minX || 1), (height - 100) / (maxY - minY || 1))));
+      const tx = width / 2 - centerX * k;
+      const ty = height / 2 - centerY * k;
+
+      const newTransform = d3.zoomIdentity.translate(tx, ty).scale(k);
+      self._savedZoom = newTransform;
+
+      if (self._zoomBehavior) {
+        svg.transition().duration(500).call(
+          self._zoomBehavior.transform,
+          newTransform
+        );
+      } else {
+        svg.select('g').attr('transform', newTransform);
+      }
+
+      if (shas.length === 1) {
+        svg.selectAll('g.node').filter(d => d === shas[0]).select('rect')
+          .transition().duration(300).style('stroke', '#ffcc00').style('stroke-width', '5px')
+          .transition().duration(500).style('stroke', null).style('stroke-width', null);
+      }
+    },
+
+    renderGraph() {
+      const svgEl = this.$refs.graphSvg;
+      if (!svgEl) return;
+      const svg = d3.select(svgEl);
+      const inner = svg.select('g');
+      inner.selectAll('*').remove();
+
+      if (!this.graphData || !this.graphData.nodes.length) return;
+
+      const hasNotes = this.graphData.nodes.some(n => n.note);
+      const g = new dagreD3.graphlib.Graph()
+        .setGraph({ rankdir: 'LR', nodesep: hasNotes ? 100 : 30, ranksep: 50, marginx: 30, marginy: 30 });
+      this.g = g;
+
+      const spaceId = this.selectedSpaceId;
+      const slot = this.selectedSlot;
+      const hasHint = this.graphData.nodes.some(n => n.hint);
+      const imgW = 320;
+      const imgH = 172;
+      const nodeW = 326;
+      const nodeH = hasHint ? (imgH + 85) : (imgH + 50);
+
+      // Calculate branch ranks based on leaf_order for ordering & edge weighting
+      const leafOrder = (this.graphData && this.graphData.leaf_order) || [];
+      const leafRankMap = new Map(leafOrder.map((sha, idx) => [sha, idx]));
+      const nodeRankMap = new Map();
+      const allParentShas = new Set(this.graphData.nodes.flatMap(n => n.parents));
+      const leafNodes = this.graphData.nodes.filter(n => !allParentShas.has(n.sha));
+
+      leafNodes.forEach(leaf => {
+        const rank = leafRankMap.has(leaf.sha) ? leafRankMap.get(leaf.sha) : 0;
+        const stack = [leaf.sha];
+        const visited = new Set();
+        while (stack.length) {
+          const curr = stack.pop();
+          if (visited.has(curr)) continue;
+          visited.add(curr);
+          if (!nodeRankMap.has(curr) || rank < nodeRankMap.get(curr)) {
+            nodeRankMap.set(curr, rank);
+          }
+          const nObj = this.graphData.nodes.find(x => x.sha === curr);
+          if (nObj && nObj.parents) {
+            nObj.parents.forEach(p => stack.push(p));
+          }
+        }
+      });
+
+      const dir = this.graphBaseDir === 'asc' ? 1 : -1;
+      const sortedNodes = [...this.graphData.nodes].sort((a, b) => {
+        if (this.graphBaseSort === 'jaccard') {
+          const rA = nodeRankMap.get(a.sha) ?? 0;
+          const rB = nodeRankMap.get(b.sha) ?? 0;
+          if (rA !== rB) return (rA - rB) * dir;
+        }
+        return (a.when - b.when) * dir;
+      });
+
+      sortedNodes.forEach(n => {
+        const cls = [n.is_head ? 'head' : '', n.is_suspect ? 'suspect' : ''].filter(Boolean).join(' ');
+        g.setNode(n.sha, {
+          label: '',
+          class: cls,
+          rx: 6, ry: 6,
+          width: nodeW,
+          height: nodeH,
+        });
+      });
+
+      sortedNodes.forEach(n => {
+        const rank = nodeRankMap.get(n.sha) ?? 0;
+        const weight = Math.max(1, 100 - rank * 2);
+        n.parents.forEach(p => g.setEdge(p, n.sha, { curve: d3.curveBasis, weight: weight }));
+      });
+
+      const render = new dagreD3.render();
+      render(inner, g);
+
+      const self = this;
+
+      inner.selectAll('g.node').each(function(sha) {
+        const n = self.graphData.nodes.find(nd => nd.sha === sha);
+        d3.select(this).select('.label').remove();
+        const imgX = -imgW / 2;
+        const imgY = -nodeH / 2 + 3;
+        const tsY  = imgY + imgH + 20;
+        d3.select(this).append('image')
+          .attr('href', self.nodeThumbnails[sha] || `/api/spaces/${spaceId}/slots/${slot}/screenshot/${sha}`)
+          .attr('x', imgX).attr('y', imgY)
+          .attr('width', imgW).attr('height', imgH)
+          .attr('preserveAspectRatio', 'xMidYMid meet');
+        if (n) {
+          const ts = new Date(n.when * 1000);
+          const label = ts.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                      + ' ' + ts.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+          d3.select(this).append('text')
+            .attr('x', 0).attr('y', tsY)
+            .attr('text-anchor', 'middle')
+            .attr('font-size', '14')
+            .attr('fill', '#8a9ac0')
+            .text(label);
+          if (n.hint) {
+            const fo = d3.select(this).append('foreignObject')
+              .attr('x', -nodeW / 2 + 6).attr('y', tsY + 14)
+              .attr('width', nodeW - 12).attr('height', 38);
+            fo.append('xhtml:div')
+              .style('font-size', '13px')
+              .style('color', '#607080')
+              .style('text-align', 'center')
+              .style('line-height', '1.35')
+              .style('overflow', 'hidden')
+              .style('max-height', '38px')
+              .style('padding', '0 6px')
+              .style('word-break', 'break-word')
+              .text(n.hint);
+          }
+          if (n.is_head) {
+            const triY = -(nodeH / 2) - 10;
+            d3.select(this).append('polygon')
+              .attr('points', `-8,${triY} 8,${triY} 0,${triY + 10}`)
+              .attr('fill', '#c8a020');
+          }
+          const hasNote = n && !!n.note;
+          const pencilColor = hasNote ? '#c8a020' : '#445566';
+          const pencilG = d3.select(this).append('g')
+            .attr('cursor', 'pointer')
+            .attr('class', 'node-pencil');
+          pencilG.append('circle')
+            .attr('cx', -nodeW / 2 - 2).attr('cy', nodeH / 2 + 6)
+            .attr('r', 13)
+            .style('fill', '#0f0f22')
+            .attr('stroke', pencilColor)
+            .attr('stroke-width', 1.5);
+          pencilG.append('text')
+            .attr('x', -nodeW / 2 - 2).attr('y', nodeH / 2 + 11)
+            .attr('text-anchor', 'middle')
+            .attr('font-size', '16')
+            .attr('fill', pencilColor)
+            .attr('pointer-events', 'none')
+            .text('✎');
+          if (hasNote) {
+            const nfo = d3.select(this).append('foreignObject')
+              .attr('x', -nodeW / 2).attr('y', nodeH / 2 + 22)
+              .attr('width', nodeW).attr('height', 80);
+            nfo.append('xhtml:div')
+              .style('font-size', '14px')
+              .style('color', '#8a9ac0')
+              .style('line-height', '1.4')
+              .style('overflow', 'hidden')
+              .style('max-height', '80px')
+              .style('padding', '0 6px')
+              .style('word-break', 'break-word')
+              .style('white-space', 'pre-line')
+              .text(n.note);
+          }
+          pencilG.on('click', function() {
+            d3.event.stopPropagation();
+            const nodeG = this.closest ? this.closest('g.node') : this.parentNode;
+            const rr = (nodeG.querySelector('rect') || nodeG).getBoundingClientRect();
+            const scale = self._savedZoom ? self._savedZoom.k : 1;
+            self.noteOverlay = {
+              open: true,
+              sha: sha,
+              x: Math.round(rr.left),
+              y: Math.round(rr.bottom + 4),
+              scale,
+            };
+            self.noteText = (self.graphData.nodes.find(nd => nd.sha === sha)?.note) || '';
+            self.$nextTick(() => { if (self.$refs.noteTextarea) self.$refs.noteTextarea.focus(); });
+          });
+          if (self.filterActive && self.filterParsed) {
+            const vars = self.nodeStates[sha] || {};
+            let passes = true;
+            try { passes = !!self.evalJsep(self.filterParsed, vars, sha); } catch(e) {}
+            if (!passes) d3.select(this).style('opacity', '0.25').style('filter', 'blur(2px)');
+          }
+        }
+      });
+
+      const zoom = d3.zoom().on('zoom', () => {
+        inner.attr('transform', d3.event.transform);
+        self._savedZoom = d3.event.transform;
+      });
+      self._zoomBehavior = zoom;
+      svg.call(zoom);
+
+      if (this._savedZoom) {
+        svg.call(zoom.transform, this._savedZoom);
+      } else {
+        const gw = g.graph().width  || 400;
+        const gh = g.graph().height || 400;
+        const sw = svgEl.clientWidth, sh = svgEl.clientHeight;
+        const scale = Math.min(1, 0.9 * Math.min(sw / (gw + 60), sh / (gh + 60)));
+        svg.call(zoom.transform,
+          d3.zoomIdentity
+            .translate((sw - gw * scale) / 2, (sh - gh * scale) / 2)
+            .scale(scale));
+      }
+
+      inner.selectAll('g.node').on('click', async function(sha) {
+        inner.selectAll('g.node').classed('selected', false);
+        d3.select(this).classed('selected', true);
+        await self.selectNode(sha);
+      });
+    },
+
+    async selectNode(sha) {
+      if (this.$refs.graphSvg) {
+        d3.select(this.$refs.graphSvg).selectAll('g.node').classed('selected', function() {
+          return d3.select(this).datum() === sha;
+        });
+      }
+      const node = this.graphData.nodes.find(n => n.sha === sha);
+      this.selectedNode = node;
+      this.diffData = null;
+      this.nodeState = null;
+      this.restore.confirming = false;
+      if (!node) return;
+      this.diffLoading = true;
+      try {
+        const base = `/api/spaces/${this.selectedSpaceId}/slots/${this.selectedSlot}`;
+        const stateProm = fetch(`${base}/state/${sha}`).then(r => r.json());
+        if (node.parents.length) {
+          const [state, diff] = await Promise.all([
+            stateProm,
+            fetch(`${base}/diff/${node.parents[0]}/${sha}`).then(r => r.json()),
+          ]);
+          this.nodeState = state;
+          const rank = v => v == null ? 3 : typeof v === 'boolean' ? 0 : typeof v === 'number' ? 1 : 2;
+          diff.changes.sort((a, b) => rank(a.new ?? a.old) - rank(b.new ?? b.old));
+          this.diffData = diff;
+        } else {
+          this.nodeState = await stateProm;
+        }
+      } finally {
+        this.diffLoading = false;
+      }
+    },
+
+    // -- ingest --
+    isFavorite(varName) {
+      return (this.spaces.find(s => s.id === this.selectedSpaceId)?.favorite_vars || []).includes(varName);
+    },
+
+    async toggleFavorite(varName) {
+      const space = this.spaces.find(s => s.id === this.selectedSpaceId);
+      if (!space) return;
+      const favs = [...(space.favorite_vars || [])];
+      const idx = favs.indexOf(varName);
+      if (idx === -1) favs.push(varName); else favs.splice(idx, 1);
+      space.favorite_vars = favs;
+      await fetch(`/api/spaces/${this.selectedSpaceId}/config`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ favorite_vars: favs }),
+      });
+    },
+
+    addToFilter(varName, value) {
+      const val = typeof value === 'string' ? `'${value}'` : value;
+      const snippet = `${varName} == ${val}`;
+      this.filterExpr = this.filterExpr.trim()
+        ? this.filterExpr.trim() + ' && ' + snippet
+        : snippet;
+    },
+
+    evalJsep(node, vars, sha) {
+      switch (node.type) {
+        case 'Literal':    return node.value;
+        case 'Identifier': return vars ? vars[node.name] : undefined;
+        case 'UnaryExpression':
+          if (node.operator === '!') return !this.evalJsep(node.argument, vars, sha);
+          if (node.operator === '-') return -this.evalJsep(node.argument, vars, sha);
+          return undefined;
+        case 'LogicalExpression':
+        case 'BinaryExpression': {
+          const op = node.operator;
+          if (op === '&&') return this.evalJsep(node.left, vars, sha) && this.evalJsep(node.right, vars, sha);
+          if (op === '||') return this.evalJsep(node.left, vars, sha) || this.evalJsep(node.right, vars, sha);
+          const l = this.evalJsep(node.left, vars, sha);
+          const r = this.evalJsep(node.right, vars, sha);
+          switch (op) {
+            case '>=': return l >= r;
+            case '<=': return l <= r;
+            case '>':  return l > r;
+            case '<':  return l < r;
+            case '==': case '===': return l == r;
+            case '!=': case '!==': return l != r;
+            case '+':  return l + r;
+            case '-':  return l - r;
+          }
+          return undefined;
+        }
+        case 'CallExpression': {
+          const fnName = node.callee && node.callee.name;
+          const args = (node.arguments || []).map(a => this.evalJsep(a, vars, sha));
+          const varName = args[0];
+          if (!varName) return undefined;
+
+          const diffInfo = (this.nodeDiffs || {})[sha] || { deltas: {}, changed: {}, added: new Set() };
+
+          if (fnName === 'delta') {
+            return (diffInfo.deltas && diffInfo.deltas[varName] !== undefined) ? diffInfo.deltas[varName] : 0;
+          }
+
+          if (fnName === 'changed') {
+            const chg = diffInfo.changed && diffInfo.changed[varName];
+            if (!chg) return false;
+            if (args.length >= 3) {
+              return chg.old === args[1] && chg.new === args[2];
+            }
+            return true;
+          }
+
+          if (fnName === 'added') {
+            return diffInfo.added ? diffInfo.added.has(varName) : false;
+          }
+
+          return undefined;
+        }
+        default: return undefined;
+      }
+    },
+
+    async loadAllStates() {
+      if (!this.selectedSpaceId || !this.selectedSlot) return;
+      try {
+        const favs = this.spaces.find(s => s.id === this.selectedSpaceId)?.favorite_vars || [];
+        const needed = new Set(favs);
+        const expr = ((this.graphOrderByExpr || '') + ' ' + (this.filterExpr || '')).match(/[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
+        const reserved = new Set(['chrono', 'jaccard', 'asc', 'desc', 'score', 'day', 'and', 'or', 'not', 'true', 'false', 'delta', 'changed', 'added']);
+        expr.forEach(v => {
+          if (!reserved.has(v.toLowerCase())) needed.add(v);
+        });
+        const query = needed.size ? `?vars=${encodeURIComponent(Array.from(needed).join(','))}` : '';
+        const url = `/api/spaces/${this.selectedSpaceId}/slots/${this.selectedSlot}/states${query}`;
+        const resp = await fetch(url);
+        if (!resp.ok) return;
+        const allStates = await resp.json();
+
+        const newStates = {};
+        for (const [sha, vars] of Object.entries(allStates)) {
+          newStates[sha] = vars;
+        }
+        this.nodeStates = newStates;
+
+        const diffs = {};
+        if (this.graphData && this.graphData.nodes) {
+          for (const n of this.graphData.nodes) {
+            const vars = allStates[n.sha] || {};
+            const pSha = n.parents && n.parents[0];
+            const pVars = pSha ? (allStates[pSha] || {}) : {};
+
+            const deltas = {};
+            const changed = {};
+            const added = new Set();
+
+            for (const [k, newVal] of Object.entries(vars)) {
+              if (!Object.prototype.hasOwnProperty.call(pVars, k)) {
+                added.add(k);
+              } else {
+                const oldVal = pVars[k];
+                if (oldVal !== newVal) {
+                  changed[k] = { old: oldVal, new: newVal };
+                  if (typeof oldVal === 'number' && typeof newVal === 'number') {
+                    deltas[k] = newVal - oldVal;
+                  }
+                }
+              }
+            }
+
+            diffs[n.sha] = { deltas, changed, added };
+          }
+        }
+        this.nodeDiffs = diffs;
+      } catch(e) {
+        console.error('Error loading states:', e);
+      }
+    },
+
+    async removeFromSortHistory(idx) {
+      const space = this.spaces.find(s => s.id === this.selectedSpaceId);
+      if (!space) return;
+      const history = [...(space.sort_history || [])];
+      history.splice(idx, 1);
+      space.sort_history = history;
+      await fetch(`/api/spaces/${this.selectedSpaceId}/config`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sort_history: history }),
+      });
+    },
+
+    async removeFromFilterHistory(idx) {
+      const space = this.spaces.find(s => s.id === this.selectedSpaceId);
+      if (!space) return;
+      const history = [...(space.filter_history || [])];
+      history.splice(idx, 1);
+      space.filter_history = history;
+      await fetch(`/api/spaces/${this.selectedSpaceId}/config`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filter_history: history }),
+      });
+    },
+
+    async applyFilter() {
+      const expr = this.filterExpr.trim();
+      if (!expr) { this.clearFilter(); return; }
+      try {
+        this.filterParsed = jsep(expr);
+        this.filterError = '';
+      } catch(e) {
+        this.filterError = e.message;
+        return;
+      }
+      await this.loadAllStates();
+      this.filterActive = true;
+      this.renderGraph();
+
+      const space = this.spaces.find(s => s.id === this.selectedSpaceId);
+      if (space) {
+        let history = [...(space.filter_history || [])];
+        history = [expr, ...history.filter(x => x !== expr)].slice(0, 20);
+        space.filter_history = history;
+        fetch(`/api/spaces/${this.selectedSpaceId}/config`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filter_history: history }),
+        });
+      }
+    },
+
+    clearFilter() {
+      this.filterActive = false;
+      this.filterParsed = null;
+      this.filterError = '';
+      this.filterExpr = '';
+      this.renderGraph();
+    },
+
+    async saveNoteAndClose() {
+      const sha = this.noteOverlay.sha;
+      if (!sha) return;
+      const text = this.noteText;
+      await fetch(
+        `/api/spaces/${this.selectedSpaceId}/slots/${this.selectedSlot}/note/${sha}`,
+        { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }) }
+      );
+      const node = this.graphData?.nodes.find(n => n.sha === sha);
+      if (node) node.note = text;
+      this.noteOverlay = { open: false, sha: null, x: 0, y: 0 };
+      this.renderGraph();
+    },
+    closeNote() {
+      this.noteOverlay = { open: false, sha: null, x: 0, y: 0 };
+    },
+
+    async ingest() {
+      if (!this.selectedSpaceId || !this.selectedSlot) return;
+      const result = await fetch(
+        `/api/spaces/${this.selectedSpaceId}/slots/${this.selectedSlot}/ingest`,
+        { method: 'POST' }
+      ).then(r => r.json());
+      if (!result.committed) {
+        this.showToast('No new save detected.');
+      } else {
+        this.showToast(result.anomaly
+          ? `⚠ Committed ${result.short} — suspect`
+          : `Committed ${result.short}`);
+        await this.loadGraph();
+        if (this.autoSelectNewNodes && result.sha) {
+          await this.selectNode(result.sha);
+        }
+      }
+    },
+
+    // -- folder picker --
+    async openPicker(target = 'saves_dir') {
+      this.picker.target = target;
+      const current = this.spaceForm[target];
+      this.picker.open = true;
+      this.picker.selected = current || null;
+      const start = current || '/';
+      this.picker.nodes = [];
+      this.picker.loading = true;
+      try {
+        const data = await fetch(`/api/browse?path=${encodeURIComponent(start)}`).then(r => r.json());
+        this.picker.nodes = data.dirs.map(name => ({
+          name, path: data.path + (data.path.endsWith('/') ? '' : '/') + name,
+          expanded: false, loading: false, children: null,
+        }));
+      } finally {
+        this.picker.loading = false;
+      }
+    },
+
+    async pickerToggle(node) {
+      if (node.expanded) {
+        node.expanded = false;
+        return;
+      }
+      if (node.children !== null) {
+        node.expanded = true;
+        return;
+      }
+      node.loading = true;
+      try {
+        const data = await fetch(`/api/browse?path=${encodeURIComponent(node.path)}`).then(r => r.json());
+        node.children = data.dirs.map(name => ({
+          name, path: data.path + (data.path.endsWith('/') ? '' : '/') + name,
+          expanded: false, loading: false, children: null,
+        }));
+        node.expanded = true;
+      } finally {
+        node.loading = false;
+      }
+    },
+
+    pickerSelect(node) {
+      this.picker.selected = node.path;
+    },
+
+    selectFolder(path) {
+      this.spaceForm[this.picker.target] = path;
+      this.picker.open = false;
+    },
+
+    // -- resizable panels --
+    initBottomResizer() {
+      const resizer  = this.$refs.bottomResizer;
+      const content  = document.getElementById('bottom-content');
+      if (!resizer || !content) return;
+      let dragging = false, startY, startH;
+      resizer.addEventListener('mousedown', e => {
+        dragging = true; startY = e.clientY; startH = content.offsetHeight;
+        resizer.classList.add('dragging');
+        document.body.style.cssText += 'cursor:row-resize;user-select:none';
+        e.preventDefault();
+      });
+      document.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        const h = Math.max(60, startH + (startY - e.clientY));
+        content.style.height = h + 'px';
+      });
+      document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        resizer.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      });
+    },
+
+    initResizer() {
+      const resizer  = this.$refs.resizer;
+      const diffPane = this.$refs.diffPane;
+      if (!resizer || !diffPane) return;
+      let dragging = false, startX, startW;
+      resizer.addEventListener('mousedown', e => {
+        dragging = true; startX = e.clientX; startW = diffPane.offsetWidth;
+        resizer.classList.add('dragging');
+        document.body.style.cssText += 'cursor:col-resize;user-select:none';
+        e.preventDefault();
+      });
+      document.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        const w = Math.max(150, Math.min(600, startW + (startX - e.clientX)));
+        diffPane.style.width = w + 'px';
+      });
+      document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        resizer.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      });
+    },
+
+    // -- restore --
+    async doRestore() {
+      if (!this.selectedNode || this.restore.busy) return;
+      this.restore.busy = true;
+      try {
+        const targetSha = this.selectedNode.sha;
+        const resp = await fetch(
+          `/api/spaces/${this.selectedSpaceId}/slots/${this.selectedSlot}/restore`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sha: targetSha }),
+          }
+        );
+        if (!resp.ok) throw new Error((await resp.json().catch(() => ({detail: resp.statusText}))).detail);
+        const info = await resp.json();
+        this.showToast(`Restored to ${info.short}`);
+
+        if (this.graphData && this.graphData.nodes) {
+          this.graphData.head = targetSha;
+          this.graphData.nodes.forEach(n => {
+            n.is_head = (n.sha === targetSha);
+          });
+          if (this.selectedNode) {
+            this.selectedNode.is_head = (this.selectedNode.sha === targetSha);
+          }
+        }
+        this.renderGraph();
+      } finally {
+        this.restore.busy = false;
+      }
+    },
+
+    hasCurrentHeadDownstream(nodeSha) {
+      if (!this.graphData || !this.graphData.nodes || !nodeSha) return false;
+      const childrenMap = new Map();
+      this.graphData.nodes.forEach(n => {
+        (n.parents || []).forEach(pSha => {
+          if (!childrenMap.has(pSha)) childrenMap.set(pSha, []);
+          childrenMap.get(pSha).push(n.sha);
+        });
+      });
+
+      const nodeMap = new Map(this.graphData.nodes.map(n => [n.sha, n]));
+      const stack = [...(childrenMap.get(nodeSha) || [])];
+      const visited = new Set();
+      while (stack.length) {
+        const currSha = stack.pop();
+        if (visited.has(currSha)) continue;
+        visited.add(currSha);
+        const currNode = nodeMap.get(currSha);
+        if (currNode && currNode.is_head) return true;
+        const kids = childrenMap.get(currSha) || [];
+        for (const k of kids) stack.push(k);
+      }
+      return false;
+    },
+
+    openDeleteModal() {
+      if (!this.selectedNode || this.selectedNode.is_head || !this.selectedNode.parents.length) return;
+      this.deleteNodeModal.node = this.selectedNode;
+      this.deleteNodeModal.strategy = 'reparent';
+      this.deleteNodeModal.hasCurrentHeadDownstream = this.hasCurrentHeadDownstream(this.selectedNode.sha);
+      this.deleteNodeModal.busy = false;
+      this.deleteNodeModal.open = true;
+    },
+
+    async confirmDeleteNode() {
+      if (!this.deleteNodeModal.node || this.deleteNodeModal.busy) return;
+      this.deleteNodeModal.busy = true;
+      try {
+        const sha = this.deleteNodeModal.node.sha;
+        const strat = this.deleteNodeModal.strategy;
+        const resp = await fetch(
+          `/api/spaces/${this.selectedSpaceId}/slots/${this.selectedSlot}/nodes/${sha}?strategy=${strat}`,
+          { method: 'DELETE' }
+        );
+        if (!resp.ok) throw new Error((await resp.json().catch(() => ({detail: resp.statusText}))).detail);
+        this.showToast(`Deleted node ${this.deleteNodeModal.node.short}`);
+        this.deleteNodeModal.open = false;
+        this.selectedNode = null;
+        await this.loadGraph();
+      } catch(err) {
+        this.showToast(`Error: ${err.message}`);
+      } finally {
+        this.deleteNodeModal.busy = false;
+      }
+    },
+
+    // -- formatting --
+    fmtVal(v) {
+      if (v == null) return '—';
+      const s = JSON.stringify(v);
+      return s.length <= 256 ? s : s.slice(0, 254) + '…';
+    },
+
+    // -- file watcher --
+    startWatcher(spaceId) {
+      this.stopWatcher();
+      const es = new EventSource(`/api/spaces/${spaceId}/watch`);
+      es.onmessage = async (ev) => {
+        const data = JSON.parse(ev.data);
+        if (data.error) {
+          this.showToast('Watch error: ' + data.error);
+        } else if (data.committed) {
+          if (data.slot === this.selectedSlot) {
+            this.showToast(data.anomaly
+              ? `⚠ Auto-committed ${data.short} — suspect`
+              : `Auto-committed ${data.short}`);
+            await this.loadGraph();
+            if (this.autoSelectNewNodes && data.sha) {
+              await this.selectNode(data.sha);
+            }
+          } else {
+            this.showToast(`Committed ${data.short} (${data.slot})`);
+          }
+        }
+      };
+      this.watcher = es;
+    },
+
+    stopWatcher() {
+      if (this.watcher) {
+        this.watcher.close();
+        this.watcher = null;
+      }
+    },
+
+    showToast(msg) {
+      this.toast = msg;
+      clearTimeout(this._toastTimer);
+      this._toastTimer = setTimeout(() => { this.toast = ''; }, 3000);
+    },
+  },
+});
+app.config.errorHandler = (err, instance) => {
+  console.error(err);
+  if (instance) instance.showToast(String(err));
+};
+app.mount('#app');
+</script>
+</body>
+</html>
