@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Git Commit-Msg Hook: Enforces a Conventional Commits prefix on the subject
+# line, since the CHANGELOG.md automation (cliff.toml) groups entries by it.
+
+MSG_FILE="$1"
+SUBJECT=$(head -n1 "$MSG_FILE")
+
+# Let git's own auto-generated messages through untouched.
+if [[ "$SUBJECT" =~ ^(Merge|Revert|fixup!|squash!) ]]; then
+    exit 0
+fi
+
+PATTERN='^(feat|fix|perf|docs|refactor|test|chore)(\([a-z0-9_-]+\))?!?: .+'
+
+if [[ ! "$SUBJECT" =~ $PATTERN ]]; then
+    echo ""
+    echo "[ERROR] Commit subject must start with a Conventional Commits prefix."
+    echo "  Got:  $SUBJECT"
+    echo "  Expected one of: feat|fix|perf|docs|refactor|test|chore, e.g.:"
+    echo "    feat: add viewport-based node hydration"
+    echo "    fix(config): tolerate unknown keys on load"
+    echo ""
+    exit 1
+fi
+
+exit 0

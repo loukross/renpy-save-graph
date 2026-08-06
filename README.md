@@ -94,6 +94,13 @@ uv run pytest -v
 uv run pytest --cov=renpy_save_graph --cov-report=term-missing
 ```
 
+### 3. Git Hooks
+Tracked hook scripts live in `scripts/` (`pre-commit` runs the test suite; `commit-msg` enforces a [Conventional Commits](https://www.conventionalcommits.org/) prefix — `feat`, `fix`, `perf`, `docs`, `refactor`, `test`, or `chore` — since `CHANGELOG.md` is generated from it). They aren't installed automatically on clone:
+```bash
+ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+ln -sf ../../scripts/commit-msg .git/hooks/commit-msg
+```
+
 ---
 
 ## 📄 License
