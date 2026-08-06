@@ -1,6 +1,7 @@
 """Playwright Web UI tests for tag creation, tag pills, and tag deletion."""
 
 import pytest
+from playwright.sync_api import expect
 
 
 @pytest.mark.ui
@@ -90,7 +91,7 @@ def test_ui_tag_creation_and_deletion(page, ui_server_url):
     page.wait_for_selector(".node-tag-manager")
 
     # Verify existing tag pill #boss-fight is rendered
-    assert page.is_visible("text=#boss-fight")
+    expect(page.locator("text=#boss-fight").first).to_be_visible()
 
     # Click +tag pill to create new tag
     page.click(".node-tag-manager >> text=+tag")

@@ -8,6 +8,7 @@ evaluates true should not.
 """
 
 import pytest
+from playwright.sync_api import expect
 
 
 @pytest.mark.ui
@@ -120,7 +121,7 @@ def test_ui_lineage_validity_expr_flags_failing_node(page, ui_server_url):
     assert page.eval_on_selector(
         "g.node.head", "el => el.classList.contains('suspect')"
     )
-    assert page.is_visible("text=Invalid lineage")
+    expect(page.locator("text=Invalid lineage").first).to_be_visible()
 
     # root1 has no parent (no diff to evaluate against) -> not flagged
     all_suspect = page.eval_on_selector_all(

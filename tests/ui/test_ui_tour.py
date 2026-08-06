@@ -1,6 +1,7 @@
 """Playwright Web UI tests for interactive Driver.js tour."""
 
 import pytest
+from playwright.sync_api import expect
 
 
 @pytest.mark.ui
@@ -81,6 +82,6 @@ def test_ui_interactive_tour(page, ui_server_url):
 
     # Verify Driver.js tour popover opens with title
     page.wait_for_selector(".driver-popover")
-    assert page.is_visible("text=Welcome to Ren'Py Save Graph!")
+    expect(page.locator("text=Welcome to Ren'Py Save Graph!").first).to_be_visible()
 
     assert page_errors == [], f"unexpected page errors: {page_errors}"

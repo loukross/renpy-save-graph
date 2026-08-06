@@ -11,6 +11,7 @@ visible and no stub is drawn.
 """
 
 import pytest
+from playwright.sync_api import expect
 
 
 @pytest.mark.ui
@@ -156,7 +157,7 @@ def test_ui_route_target_prunes_and_toggles(page, ui_server_url):
     assert "Route A" in badge_text
 
     assert page.eval_on_selector_all(".hidden-subtree-stub", "els => els.length") == 1
-    assert page.is_visible("text=(suboptimal tree hidden)")
+    expect(page.locator("text=(suboptimal tree hidden)").first).to_be_visible()
 
     # Regression guard: loadAllStates() must scan route_targets expressions
     # for identifiers too, or the server's ?vars= filtering silently drops

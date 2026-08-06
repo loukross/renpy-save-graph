@@ -1,6 +1,7 @@
 """Playwright Web UI tests for floating Auto-select toggle and popovers."""
 
 import pytest
+from playwright.sync_api import expect
 
 
 @pytest.mark.ui
@@ -68,13 +69,13 @@ def test_ui_floating_autoselect_button(page, ui_server_url):
     page.goto(ui_server_url)
     page.wait_for_selector("#app")
 
-    assert page.is_visible("text=Ren'Py Save Graph")
+    expect(page.locator("text=Ren'Py Save Graph").first).to_be_visible()
 
     page.click("button:has-text('Graph')")
     page.wait_for_selector("#graph-canvas")
 
     autoselect_btn = page.locator("button:has-text('Auto-select on add')")
-    assert autoselect_btn.is_visible()
+    expect(autoselect_btn).to_be_visible()
     assert "⚡" not in autoselect_btn.inner_text()
 
     autoselect_btn.click()

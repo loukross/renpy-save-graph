@@ -1,6 +1,7 @@
 """Playwright Web UI tests for Multi-Alignment Popover Box."""
 
 import pytest
+from playwright.sync_api import expect
 
 
 @pytest.mark.ui
@@ -85,8 +86,8 @@ def test_ui_alignment_popover_toggling(page, ui_server_url):
     page.wait_for_selector("text=Horizontal Alignment Options")
 
     # Verify Story Variable button currentEpisode and Tag button #boss-fight exist inside popover
-    assert page.is_visible("div:has-text('Horizontal Alignment Options') button:has-text('currentEpisode')")
-    assert page.is_visible("div:has-text('Horizontal Alignment Options') button:has-text('#boss-fight')")
+    expect(page.locator("div:has-text('Horizontal Alignment Options') button:has-text('currentEpisode')").last).to_be_visible()
+    expect(page.locator("div:has-text('Horizontal Alignment Options') button:has-text('#boss-fight')").last).to_be_visible()
 
     # Toggle currentEpisode ON
     page.click("div:has-text('Horizontal Alignment Options') button:has-text('currentEpisode')")
