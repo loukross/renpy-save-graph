@@ -32,6 +32,12 @@ _HTML_PATH = Path(__file__).parent / "static" / "index.html"
 _ASSETS_DIR = Path(__file__).parent / "static" / "assets"
 _SPACE_PATCHABLE = {"label", "saves_dir", "additional_saves_dirs", "node_hint_format", "slot_exclude", "lineage_validity_expr", "milestone_vars", "route_targets", "favorite_vars", "filter_history", "sort_history"}
 
+# Settings that describe the graph rather than this machine, so they belong in
+# the library's manifest and travel to whoever opens it.  Deliberately excludes
+# the saves dirs (per-install), and the filter/sort history (personal noise).
+_MANIFEST_KEYS = ("label", "node_hint_format", "slot_exclude", "favorite_vars",
+                  "milestone_vars", "route_targets", "lineage_validity_expr")
+
 
 class _SortVal:
     def __init__(self, val: Any, desc: bool) -> None:
@@ -89,6 +95,18 @@ def create_app(config_path: Path) -> FastAPI:
             slot_exclude=space.slot_exclude,
             additional_saves_dirs=[Path(d) for d in space.additional_saves_dirs if d],
         ))
+
+    def publish_manifest(space: GameSpace) -> None:
+        """Mirror the space's portable settings into its library."""
+        try:
+            make_library(space).write_manifest(
+                {"schema": 1, "space": {k: getattr(space, k) for k in _MANIFEST_KEYS}}
+            )
+        except Exception:
+            # Config lives in config.json regardless; a library that can't be
+            # written (missing drive, read-only clone) must not fail the save.
+            import traceback
+            traceback.print_exc()
 
     def make_db(space: GameSpace) -> DatabaseStore:
         lib_path = Path(space.library_path)
@@ -152,6 +170,7 @@ def create_app(config_path: Path) -> FastAPI:
             route_targets=body.get("route_targets", []),
         )
         cfg.spaces.append(space)
+        publish_manifest(space)
         save(cfg)
         return asdict(space)
 
@@ -179,6 +198,7 @@ def create_app(config_path: Path) -> FastAPI:
                 for k, v in patch.items():
                     if k in _SPACE_PATCHABLE:
                         setattr(s, k, v)
+                publish_manifest(s)
                 break
         save(cfg)
         return {"ok": True}
@@ -506,28 +526,24 @@ def create_app(config_path: Path) -> FastAPI:
     def api_get_tags(space_id: str, slot_name: str) -> dict[str, Any]:
         space = get_space_or_404(space_id)
         director = make_director(space)
-        db = make_db(space)
-        nodes = director.library.dag_for_slot(slot_name, director.slot_names())
-        shas = [n.sha for n in nodes]
+        tags = director.library.tags_all()
+        shas = [n.sha for n in director.library.dag_for_slot(slot_name, director.slot_names())]
+        all_tags = sorted({t for node_tags in tags.values() for t in node_tags})
         return {
-            "tags": db.get_tags(shas),
-            "all_tags": db.get_all_tags(),
+            "tags": {sha: tags.get(sha, []) for sha in shas},
+            "all_tags": all_tags,
         }
 
     @app.post("/api/spaces/{space_id}/slots/{slot_name}/nodes/{sha}/tags")
     def api_add_node_tag(space_id: str, slot_name: str, sha: str, body: dict[str, Any] = Body(...)) -> dict[str, bool]:
-        space = get_space_or_404(space_id)
-        db = make_db(space)
-        tag = body.get("tag", "").strip()
-        if tag:
-            db.add_tag(sha, tag)
+        lib = make_library(get_space_or_404(space_id))
+        lib.add_tag(sha, body.get("tag", ""))
         return {"ok": True}
 
     @app.delete("/api/spaces/{space_id}/slots/{slot_name}/nodes/{sha}/tags/{tag}")
     def api_delete_node_tag(space_id: str, slot_name: str, sha: str, tag: str) -> dict[str, bool]:
-        space = get_space_or_404(space_id)
-        db = make_db(space)
-        db.remove_tag(sha, tag)
+        lib = make_library(get_space_or_404(space_id))
+        lib.remove_tag(sha, tag)
         return {"ok": True}
 
     @app.post("/api/examples/reset")

@@ -74,10 +74,10 @@ def ensure_example_space(config_path: Path) -> None:
             db = DatabaseStore(lib_dir / "graph.sqlite")
             db.sync_with_git(director.library, slot_name, director.slot_names())
             if sha_b:
-                db.add_tag(sha_b, "forest-route")
-                db.add_tag(sha_b, "ch1-milestone")
+                director.library.add_tag(sha_b, "forest-route")
+                director.library.add_tag(sha_b, "ch1-milestone")
             if sha_c:
-                db.add_tag(sha_c, "mountain-gate")
+                director.library.add_tag(sha_c, "mountain-gate")
 
         cfg.spaces.append(space)
         cfg.save(config_path)
