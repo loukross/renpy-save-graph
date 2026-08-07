@@ -29,7 +29,6 @@ const props = defineProps({
   graphData: Object,
   nodeStates: Object,
   nodeDiffs: Object,
-  nodeThumbnails: Object,
   nodeTags: Object,
   selectedNodeSha: String,
   selectedAlignments: Array,
@@ -67,8 +66,11 @@ const svgRef = ref(null);
 let zoomBehavior = null;
 let svgSelection = null;
 let containerGroup = null;
+const SELECTED_STROKE = '#50a0ff';
+
 const viewport = useGraphViewport();
 let positioned = false;
+let lastSelectedSha = '';
 let nodePosMap = new Map();
 let layoutMeta = { nodeW: 326, nodeH: 222 };
 let resizeObserver = null;
@@ -98,32 +100,56 @@ onUnmounted(() => {
   }
 });
 
+// Full redraw only for inputs that change layout or node content. No deep
+// option: these refs are replaced wholesale, and deep-traversing the graph and
+// per-node states on every change was a large share of the interaction cost.
 watch(
   () => [
     props.graphData,
     props.nodeStates,
     props.nodeDiffs,
-    props.selectedNodeSha,
-    props.selectedAlignments,
+    props.nodeTags,
     props.showMilestoneGuides,
     props.graphBaseSort,
     props.graphBaseDir,
     props.filterExpr,
     props.lineageValidityExpr,
     props.routeTargets,
-    props.selectedRouteTargets,
     props.hideOffTrack,
-    props.nodeTags,
     props.spaceId,
     props.slotName,
+    // Mutated in place by their toggles, so compare by value.
+    (props.selectedAlignments || []).join(' '),
+    (props.selectedRouteTargets || []).join(' '),
   ],
   () => {
     if (props.graphData && props.graphData.nodes) {
       renderGraph();
     }
-  },
-  { deep: true }
+  }
 );
+
+// Selecting a node restyles two nodes; it must not redraw the graph.
+watch(() => props.selectedNodeSha, applySelection);
+
+// Repaint only the nodes losing and gaining selection.
+function applySelection() {
+  if (!containerGroup) return;
+  const next = props.selectedNodeSha || '';
+  containerGroup.selectAll('g.node')
+    .filter(d => d.data.sha === lastSelectedSha || d.data.sha === next)
+    .each(function (d) {
+      const isSelected = d.data.sha === next;
+      const g = d3.select(this);
+      g.classed('selected', isSelected);
+      const rect = g.select('rect.node-bg');
+      if (rect.empty()) return;
+      rect
+        .attr('stroke', isSelected ? SELECTED_STROKE : rect.attr('data-base-stroke'))
+        .attr('stroke-width', isSelected ? 3 : 2);
+    });
+  lastSelectedSha = next;
+}
 
 function setupD3Svg() {
   if (!svgRef.value) return;
@@ -574,17 +600,18 @@ function renderGraph() {
     const brokenTargets = Array.from(brokenTargetsBySha.get(sha) || []);
     const isSuboptimal = !isSuspect && brokenTargets.length > 0;
 
-    const strokeColor = sha === props.selectedNodeSha
-      ? '#50a0ff'
-      : (isSuspect ? '#c04040' : (isSuboptimal ? '#8b5a2b' : '#2a3060'));
+    // Stashed so selection can be repainted later without a re-render.
+    const baseStroke = isSuspect ? '#c04040' : (isSuboptimal ? '#8b5a2b' : '#2a3060');
+    const isSelected = sha === props.selectedNodeSha;
 
     d3.select(el).append('rect')
       .attr('class', 'node-bg')
       .attr('rx', 6).attr('ry', 6)
       .attr('x', -nodeW / 2).attr('y', -nodeH / 2)
       .attr('width', nodeW).attr('height', nodeH)
-      .attr('stroke', strokeColor)
-      .attr('stroke-width', sha === props.selectedNodeSha ? 3 : 2);
+      .attr('data-base-stroke', baseStroke)
+      .attr('stroke', isSelected ? SELECTED_STROKE : baseStroke)
+      .attr('stroke-width', isSelected ? 3 : 2);
 
     // Ring goes before decorateNode so its stroke stays underneath the
     // tag pills (left edge) and pencil/notes button (bottom edge) that
@@ -677,6 +704,8 @@ function renderGraph() {
 
   // Zoom / pan — decide the initial transform before this first render so
   // nodes don't start out cut off at the edge (ported from ui.html).
+  lastSelectedSha = props.selectedNodeSha || '';
+
   // Position only on the first draw; later renders leave the camera alone.
   if (!positioned) {
     positioned = true;
@@ -701,7 +730,7 @@ function decorateNode(el, n, meta) {
   const tsY = imgY + imgH + 20;
 
   nodeSel.append('image')
-    .attr('href', (props.nodeThumbnails && props.nodeThumbnails[sha]) || `/api/spaces/${props.spaceId}/slots/${props.slotName}/screenshot/${sha}`)
+    .attr('href', `/api/spaces/${props.spaceId}/slots/${props.slotName}/screenshot/${sha}`)
     .attr('x', imgX).attr('y', imgY)
     .attr('width', imgW).attr('height', imgH)
     .attr('preserveAspectRatio', 'xMidYMid meet');

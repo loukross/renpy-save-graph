@@ -1,93 +1,113 @@
 import { ref } from 'vue';
 
+const RESERVED = new Set([
+  'chrono', 'jaccard', 'asc', 'desc', 'score', 'day', 'and', 'or', 'not',
+  'true', 'false', 'delta', 'changed', 'added',
+]);
+
 export function useGraphData() {
   const graphData = ref(null);
   const nodeStates = ref({});
   const nodeDiffs = ref({});
-  const nodeThumbnails = ref({});
   const graphLoading = ref(false);
 
   const selectedNodeSha = ref('');
   const selectedNode = ref(null);
   const selectedNodeState = ref(null);
+  const selectedNodeSaveDir = ref(null);
   const diffData = ref(null);
   const diffLoading = ref(false);
   const stateLoading = ref(false);
 
+  // Only the variables the UI actually evaluates are worth fetching.
+  function statesUrl(spaceId, slotName, spaceConfig, filterExpr, graphOrderByExpr) {
+    const needed = new Set([
+      ...(spaceConfig?.favorite_vars || []),
+      ...(spaceConfig?.milestone_vars || []),
+    ]);
+    const routeTargetExprs = (spaceConfig?.route_targets || []).map(rt => rt.expr || '').join(' ');
+    const rawStr = ((graphOrderByExpr || '') + ' ' + (filterExpr || '') + ' ' + (spaceConfig?.lineage_validity_expr || '') + ' ' + routeTargetExprs);
+    const exprMatches = rawStr.match(/[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
+    exprMatches.forEach(v => {
+      if (!RESERVED.has(v.toLowerCase())) needed.add(v);
+    });
+    const query = needed.size ? `?vars=${encodeURIComponent(Array.from(needed).join(','))}` : '';
+    return `/api/spaces/${spaceId}/slots/${slotName}/states${query}`;
+  }
+
+  async function fetchStates(spaceId, slotName, spaceConfig, filterExpr, graphOrderByExpr) {
+    const resp = await fetch(statesUrl(spaceId, slotName, spaceConfig, filterExpr, graphOrderByExpr));
+    if (!resp.ok) return null;
+    return (await resp.json()) || {};
+  }
+
+  function computeDiffs(graph, allStates) {
+    const diffs = {};
+    if (!graph || !graph.nodes) return diffs;
+    for (const n of graph.nodes) {
+      const vars = allStates[n.sha] || {};
+      const pSha = n.parents && n.parents[0];
+      const pVars = pSha ? (allStates[pSha] || {}) : {};
+
+      const deltas = {};
+      const changed = {};
+      const added = new Set();
+
+      for (const [k, newVal] of Object.entries(vars)) {
+        if (!Object.prototype.hasOwnProperty.call(pVars, k)) {
+          added.add(k);
+        } else {
+          const oldVal = pVars[k];
+          if (oldVal !== newVal) {
+            changed[k] = { old: oldVal, new: newVal };
+            if (typeof oldVal === 'number' && typeof newVal === 'number') {
+              deltas[k] = newVal - oldVal;
+            }
+          }
+        }
+      }
+      diffs[n.sha] = { deltas, changed, added };
+    }
+    return diffs;
+  }
+
   async function loadAllStates(spaceId, slotName, spaceConfig, filterExpr, graphOrderByExpr) {
     if (!spaceId || !slotName) return;
     try {
-      const favs = spaceConfig?.favorite_vars || [];
-      const mVars = spaceConfig?.milestone_vars || [];
-      const needed = new Set([...favs, ...mVars]);
-      const routeTargetExprs = (spaceConfig?.route_targets || []).map(rt => rt.expr || '').join(' ');
-      const rawStr = ((graphOrderByExpr || '') + ' ' + (filterExpr || '') + ' ' + (spaceConfig?.lineage_validity_expr || '') + ' ' + routeTargetExprs);
-      const exprMatches = rawStr.match(/[a-zA-Z_][a-zA-Z0-9_]*/g) || [];
-      const reserved = new Set(['chrono', 'jaccard', 'asc', 'desc', 'score', 'day', 'and', 'or', 'not', 'true', 'false', 'delta', 'changed', 'added']);
-      exprMatches.forEach(v => {
-        if (!reserved.has(v.toLowerCase())) needed.add(v);
-      });
-
-      const query = needed.size ? `?vars=${encodeURIComponent(Array.from(needed).join(','))}` : '';
-      const url = `/api/spaces/${spaceId}/slots/${slotName}/states${query}`;
-      const resp = await fetch(url);
-      if (!resp.ok) return;
-      const allStates = await resp.json();
-      nodeStates.value = allStates || {};
-
-      // Compute deltas & diffs for lineage checks
-      const diffs = {};
-      if (graphData.value && graphData.value.nodes) {
-        for (const n of graphData.value.nodes) {
-          const vars = allStates[n.sha] || {};
-          const pSha = n.parents && n.parents[0];
-          const pVars = pSha ? (allStates[pSha] || {}) : {};
-
-          const deltas = {};
-          const changed = {};
-          const added = new Set();
-
-          for (const [k, newVal] of Object.entries(vars)) {
-            if (!Object.prototype.hasOwnProperty.call(pVars, k)) {
-              added.add(k);
-            } else {
-              const oldVal = pVars[k];
-              if (oldVal !== newVal) {
-                changed[k] = { old: oldVal, new: newVal };
-                if (typeof oldVal === 'number' && typeof newVal === 'number') {
-                  deltas[k] = newVal - oldVal;
-                }
-              }
-            }
-          }
-          diffs[n.sha] = { deltas, changed, added };
-        }
-      }
-      nodeDiffs.value = diffs;
+      const states = await fetchStates(spaceId, slotName, spaceConfig, filterExpr, graphOrderByExpr);
+      if (!states) return;
+      nodeStates.value = states;
+      nodeDiffs.value = computeDiffs(graphData.value, states);
     } catch (e) {
       console.error('Error loading states:', e);
     }
   }
 
-  async function loadGraph(spaceId, slotName, baseSort = 'chronological', baseDir = 'desc', spaceConfig = null, filterExpr = '', orderByExpr = '') {
-    if (!spaceId || !slotName) return;
-    graphLoading.value = true;
+  // Fetch and commit are split so the caller can land the graph, its states and
+  // the tags in one tick — one redraw instead of one per response. Thumbnails
+  // are not fetched: nodes point <image> straight at /screenshot/{sha}, so the
+  // browser streams and caches them rather than us shipping base64 as JSON.
+  async function fetchGraphBundle(spaceId, slotName, baseSort = 'chronological', baseDir = 'desc', spaceConfig = null, filterExpr = '', orderByExpr = '') {
+    if (!spaceId || !slotName) return null;
     try {
-      const base = `/api/spaces/${spaceId}/slots/${slotName}`;
-      const url = `${base}/graph?base_sort=${baseSort}&base_dir=${baseDir}&order_by=${encodeURIComponent(orderByExpr)}`;
-      const [resp, shotResp] = await Promise.all([
-        fetch(url),
-        fetch(`${base}/screenshots`).then(r => r.json()).catch(() => ({})),
+      const url = `/api/spaces/${spaceId}/slots/${slotName}/graph?base_sort=${baseSort}&base_dir=${baseDir}&order_by=${encodeURIComponent(orderByExpr)}`;
+      const [graph, states] = await Promise.all([
+        fetch(url).then(r => (r.ok ? r.json() : null)),
+        fetchStates(spaceId, slotName, spaceConfig, filterExpr, orderByExpr).catch(() => null),
       ]);
-      if (!resp.ok) return;
-      graphData.value = await resp.json();
-      nodeThumbnails.value = shotResp || {};
-      await loadAllStates(spaceId, slotName, spaceConfig, filterExpr, orderByExpr);
+      if (!graph) return null;
+      return { graph, states: states || {}, diffs: computeDiffs(graph, states || {}) };
     } catch (e) {
       console.error('Error loading graph:', e);
-    } finally {
-      graphLoading.value = false;
+      return null;
     }
+  }
+
+  function commitGraphBundle(bundle) {
+    if (!bundle) return;
+    graphData.value = bundle.graph;
+    nodeStates.value = bundle.states;
+    nodeDiffs.value = bundle.diffs;
   }
 
   async function selectNode(spaceId, slotName, sha) {
@@ -97,35 +117,33 @@ export function useGraphData() {
     selectedNodeSha.value = sha;
     selectedNode.value = n;
 
-    // Load full state for node
     stateLoading.value = true;
+    diffLoading.value = true;
+
+    const parentSha = n.parents && n.parents.length ? n.parents[0] : sha;
+
+    const statePromise = fetch(`/api/spaces/${spaceId}/slots/${slotName}/state/${sha}`)
+      .then(r => (r.ok ? r.json() : null))
+      .catch((e) => {
+        console.error('Error loading node state:', e);
+        return null;
+      });
+
+    const diffPromise = fetch(`/api/spaces/${spaceId}/slots/${slotName}/diff/${parentSha}/${sha}`)
+      .then(r => (r.ok ? r.json() : null))
+      .catch((e) => {
+        console.error('Error loading diff:', e);
+        return null;
+      });
+
     try {
-      const resp = await fetch(`/api/spaces/${spaceId}/slots/${slotName}/state/${sha}`);
-      if (resp.ok) {
-        selectedNodeState.value = await resp.json();
-      }
-    } catch (e) {
-      console.error('Error loading node state:', e);
+      const [stateRes, diffRes] = await Promise.all([statePromise, diffPromise]);
+      selectedNodeState.value = stateRes;
+      diffData.value = diffRes || { changes: [], save_dir: null };
+      selectedNodeSaveDir.value = (diffRes && diffRes.save_dir != null) ? diffRes.save_dir : (stateRes && stateRes.save_dir != null ? stateRes.save_dir : null);
     } finally {
       stateLoading.value = false;
-    }
-
-    // Load diff with parent
-    if (n.parents && n.parents.length) {
-      diffLoading.value = true;
-      try {
-        const parentSha = n.parents[0];
-        const resp = await fetch(`/api/spaces/${spaceId}/slots/${slotName}/diff/${parentSha}/${sha}`);
-        if (resp.ok) {
-          diffData.value = await resp.json();
-        }
-      } catch (e) {
-        console.error('Error loading diff:', e);
-      } finally {
-        diffLoading.value = false;
-      }
-    } else {
-      diffData.value = { changes: [] };
+      diffLoading.value = false;
     }
   }
 
@@ -133,15 +151,16 @@ export function useGraphData() {
     graphData,
     nodeStates,
     nodeDiffs,
-    nodeThumbnails,
     graphLoading,
     selectedNodeSha,
     selectedNode,
     selectedNodeState,
+    selectedNodeSaveDir,
     diffData,
     diffLoading,
     stateLoading,
-    loadGraph,
+    fetchGraphBundle,
+    commitGraphBundle,
     loadAllStates,
     selectNode,
   };

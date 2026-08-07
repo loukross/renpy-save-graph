@@ -102,6 +102,7 @@ def test_ui_lineage_validity_expr_flags_failing_node(page, ui_server_url):
         ),
     )
 
+    page.add_init_script("localStorage.setItem('renpy_save_graph_tour_seen', 'true')")
     page.goto(ui_server_url)
     page.wait_for_selector("#app")
 

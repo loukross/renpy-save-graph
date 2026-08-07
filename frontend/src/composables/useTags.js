@@ -4,17 +4,26 @@ export function useTags() {
   const nodeTags = ref({});
   const allSpaceTags = ref([]);
 
-  async function loadTags(spaceId, slotName) {
-    if (!spaceId || !slotName) return;
+  // Split so a caller can commit tags in the same tick as the graph.
+  async function fetchTags(spaceId, slotName) {
+    if (!spaceId || !slotName) return null;
     try {
       const resp = await fetch(`/api/spaces/${spaceId}/slots/${slotName}/tags`);
-      if (!resp.ok) return;
-      const data = await resp.json();
-      nodeTags.value = data.tags || {};
-      allSpaceTags.value = data.all_tags || [];
+      return resp.ok ? await resp.json() : null;
     } catch (e) {
       console.error('Error loading tags:', e);
+      return null;
     }
+  }
+
+  function commitTags(data) {
+    if (!data) return;
+    nodeTags.value = data.tags || {};
+    allSpaceTags.value = data.all_tags || [];
+  }
+
+  async function loadTags(spaceId, slotName) {
+    commitTags(await fetchTags(spaceId, slotName));
   }
 
   async function addNodeTag(spaceId, slotName, sha, tag, onComplete) {
@@ -48,6 +57,8 @@ export function useTags() {
   return {
     nodeTags,
     allSpaceTags,
+    fetchTags,
+    commitTags,
     loadTags,
     addNodeTag,
     removeNodeTag,

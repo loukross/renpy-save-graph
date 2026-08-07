@@ -73,7 +73,6 @@
             :graph-data="graphData"
             :node-states="nodeStates"
             :node-diffs="nodeDiffs"
-            :node-thumbnails="nodeThumbnails"
             :node-tags="nodeTags"
             :selected-node-sha="selectedNodeSha"
             :selected-alignments="selectedAlignments"
@@ -141,10 +140,13 @@
         <DiffPane
           :node="selectedNode"
           :diff-data="diffData"
+          :save-dir="selectedNodeSaveDir"
           :loading="diffLoading"
           :restoring="restoring"
+          :has-multiple-saves-dirs="hasMultipleSavesDirs"
           @restore="doRestore"
           @delete="openDeleteModal"
+          @change-save-dir="openChangeSaveDirModal"
         />
       </div>
 
@@ -218,6 +220,14 @@
       @confirm="confirmRemoveSpace"
     />
 
+    <RestoreDirModal
+      :is-open="restoreDirModal.open"
+      :saves-dirs="restoreDirModal.savesDirs"
+      :current-dir="restoreDirModal.currentDir"
+      @close="restoreDirModal.open = false"
+      @confirm="confirmRestoreDir"
+    />
+
     <HelpPopover
       :is-open="helpPopover.open"
       :type="helpPopover.type"
@@ -249,6 +259,7 @@ import AboutModal from './components/modals/AboutModal.vue';
 import DeleteNodeModal from './components/modals/DeleteNodeModal.vue';
 import PickerModal from './components/modals/PickerModal.vue';
 import RemoveSpaceModal from './components/modals/RemoveSpaceModal.vue';
+import RestoreDirModal from './components/modals/RestoreDirModal.vue';
 
 import { useTags } from './composables/useTags.js';
 import { useAlignments } from './composables/useAlignments.js';
@@ -318,9 +329,10 @@ const noteTextareaRef = ref(null);
 
 const picker = ref({ open: false, target: 'saves_dir', nodes: [], selected: null, loading: false });
 const removeSpaceModal = ref({ open: false, space: null });
+const restoreDirModal = ref({ open: false, savesDirs: [], currentDir: '' });
 const helpPopover = ref({ open: false, type: null, left: '0px', bottom: '0px' });
 
-const { nodeTags, allSpaceTags, loadTags, addNodeTag, removeNodeTag } = useTags();
+const { nodeTags, allSpaceTags, fetchTags, commitTags, addNodeTag, removeNodeTag } = useTags();
 const {
   selectedAlignments,
   showAlignmentPopover,
@@ -336,20 +348,24 @@ const {
   graphData,
   nodeStates,
   nodeDiffs,
-  nodeThumbnails,
   graphLoading,
   selectedNodeSha,
   selectedNode,
   selectedNodeState,
+  selectedNodeSaveDir,
   diffData,
   diffLoading,
   stateLoading,
-  loadGraph,
+  fetchGraphBundle,
+  commitGraphBundle,
   loadAllStates,
   selectNode,
 } = useGraphData();
 
 const currentSpace = computed(() => spaces.value.find(s => s.id === selectedSpaceId.value));
+const hasMultipleSavesDirs = computed(() => {
+  return !!(currentSpace.value && currentSpace.value.additional_saves_dirs && currentSpace.value.additional_saves_dirs.length > 0);
+});
 const currentSortHistory = computed(() => (currentSpace.value && currentSpace.value.sort_history) || []);
 const currentFilterHistory = computed(() => (currentSpace.value && currentSpace.value.filter_history) || []);
 
@@ -402,7 +418,13 @@ function onGlobalClick(e) {
   }
 }
 
+let suppressSlotWatch = false;
+
 watch(selectedSlot, async (newSlot) => {
+  if (suppressSlotWatch) return;
+  // Startup picks a slot while still on the Spaces page; loading a graph
+  // nobody is looking at costs an ingest and a full fetch for nothing.
+  if (view.value !== 'graph') return;
   if (newSlot && selectedSpaceId.value) {
     await reloadGraph();
   }
@@ -592,8 +614,15 @@ async function openGraph(spaceId) {
   if (!spaceId) return;
   selectedSpaceId.value = spaceId;
   view.value = 'graph';
-  await loadSlots();
-  await reloadGraph();
+  // loadSlots picks a slot, whose watcher would reload the graph a second time.
+  // Mute it and reload once here, so the watcher still starts after the load.
+  suppressSlotWatch = true;
+  try {
+    await loadSlots();
+    await reloadGraph();
+  } finally {
+    suppressSlotWatch = false;
+  }
   startWatcher(spaceId);
 }
 
@@ -603,8 +632,18 @@ async function reloadGraph() {
     await fetch(`/api/spaces/${selectedSpaceId.value}/ingest`, { method: 'POST' });
   } catch (e) {}
   await loadSlots();
-  await loadGraph(selectedSpaceId.value, selectedSlot.value, graphBaseSort.value, graphBaseDir.value, currentSpace.value, appliedFilterExpr.value, graphOrderByExpr.value);
-  await loadTags(selectedSpaceId.value, selectedSlot.value);
+  graphLoading.value = true;
+  try {
+    const [bundle, tags] = await Promise.all([
+      fetchGraphBundle(selectedSpaceId.value, selectedSlot.value, graphBaseSort.value, graphBaseDir.value, currentSpace.value, appliedFilterExpr.value, graphOrderByExpr.value),
+      fetchTags(selectedSpaceId.value, selectedSlot.value),
+    ]);
+    // Both commits in one tick, so the canvas redraws once.
+    commitTags(tags);
+    commitGraphBundle(bundle);
+  } finally {
+    graphLoading.value = false;
+  }
 }
 
 function onBaseSortChange(value) {
@@ -800,31 +839,91 @@ async function ingest() {
   }
 }
 
-async function doRestore() {
+async function doRestore(targetSaveDir = null) {
   if (!selectedNode.value || restoring.value) return;
   restoring.value = true;
   try {
     const targetSha = selectedNode.value.sha;
+    const payload = { sha: targetSha };
+    if (targetSaveDir) {
+      payload.target_save_dir = targetSaveDir;
+    }
     const resp = await fetch(`/api/spaces/${selectedSpaceId.value}/slots/${selectedSlot.value}/restore`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sha: targetSha }),
+      body: JSON.stringify(payload),
     });
     if (!resp.ok) {
       const e = await resp.json().catch(() => ({}));
-      throw new Error(e.detail || resp.statusText);
+      if (resp.status === 400 && e.detail && typeof e.detail === 'object' && e.detail.error === 'SAVE_DIR_REQUIRED') {
+        restoreDirModal.value = {
+          open: true,
+          savesDirs: e.detail.saves_dirs || [],
+        };
+        return;
+      }
+      throw new Error(typeof e.detail === 'string' ? e.detail : resp.statusText);
     }
     const info = await resp.json();
     showToast(`Restored to ${info.short}`);
     if (graphData.value && graphData.value.nodes) {
-      graphData.value.head = targetSha;
-      graphData.value.nodes.forEach(n => { n.is_head = (n.sha === targetSha); });
-      if (selectedNode.value) selectedNode.value.is_head = (selectedNode.value.sha === targetSha);
+      // Replaced, not mutated in place: the canvas watches graphData by
+      // reference, so an in-place edit would never reach the head marker.
+      const nodes = graphData.value.nodes.map(n => ({ ...n, is_head: n.sha === targetSha }));
+      graphData.value = { ...graphData.value, head: targetSha, nodes };
+      const selectedSha = selectedNode.value && selectedNode.value.sha;
+      if (selectedSha) {
+        selectedNode.value = nodes.find(n => n.sha === selectedSha) || selectedNode.value;
+      }
     }
   } catch (err) {
     showToast(`Error: ${err.message}`);
   } finally {
     restoring.value = false;
+  }
+}
+
+function openChangeSaveDirModal() {
+  if (!currentSpace.value) return;
+  const allSavesDirs = [currentSpace.value.saves_dir, ...(currentSpace.value.additional_saves_dirs || [])].filter(Boolean);
+  restoreDirModal.value = {
+    open: true,
+    savesDirs: allSavesDirs,
+    currentDir: selectedNodeSaveDir.value || '',
+    // Captured now: the confirm handler must not depend on selection surviving.
+    sha: selectedNode.value ? selectedNode.value.sha : '',
+    slot: selectedSlot.value,
+    spaceId: selectedSpaceId.value,
+  };
+}
+
+async function confirmRestoreDir(chosenDir) {
+  const { sha, slot, spaceId } = restoreDirModal.value;
+  restoreDirModal.value.open = false;
+  if (!sha || !slot || !spaceId) {
+    showToast('Could not set save directory: no save point selected.');
+    return;
+  }
+  try {
+    const resp = await fetch(`/api/spaces/${spaceId}/slots/${slot}/nodes/${sha}/save-dir`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ save_dir: chosenDir }),
+    });
+    if (!resp.ok) {
+      const e = await resp.json().catch(() => ({}));
+      throw new Error(e.detail || resp.statusText);
+    }
+    showToast('Updated save directory for node and child nodes.');
+    selectedNodeSaveDir.value = chosenDir;
+    if (diffData.value) {
+      diffData.value = { ...diffData.value, save_dir: chosenDir };
+    }
+    if (selectedNode.value) {
+      selectedNode.value = { ...selectedNode.value, save_dir: chosenDir };
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
   }
 }
 

@@ -65,6 +65,7 @@ def test_ui_decoupled_regex_filters(page, ui_server_url):
         lambda route: route.fulfill(status=200, json={"sha123": ""}),
     )
 
+    page.add_init_script("localStorage.setItem('renpy_save_graph_tour_seen', 'true')")
     page.goto(ui_server_url)
     page.wait_for_selector("#app")
 

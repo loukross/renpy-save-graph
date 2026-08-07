@@ -342,9 +342,18 @@ def create_app(config_path: Path) -> FastAPI:
         lib.set_note(sha, body.get("text", ""))
         return {"ok": True}
 
+    @app.put("/api/spaces/{space_id}/slots/{slot_name}/nodes/{sha}/save-dir")
+    def api_set_node_save_dir(space_id: str, slot_name: str, sha: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        director = make_director(get_space_or_404(space_id))
+        save_dir = body.get("save_dir", "").strip()
+        director.set_save_dir_subtree(slot_name, sha, save_dir)
+        resolved = director.node_save_dir(slot_name, sha)
+        return {"ok": True, "sha": sha, "save_dir": resolved}
+
     @app.get("/api/spaces/{space_id}/slots/{slot_name}/diff/{sha1}/{sha2}")
     def api_diff(space_id: str, slot_name: str, sha1: str, sha2: str) -> dict[str, Any]:
         space = get_space_or_404(space_id)
+        director = make_director(space)
         db = make_db(space)
         states = db.get_all_states([sha1, sha2])
         v1, v2 = states.get(sha1, {}), states.get(sha2, {})
@@ -355,14 +364,17 @@ def create_app(config_path: Path) -> FastAPI:
             {"var": k, "old": v1.get(k), "new": v2.get(k), "removed": k not in v2}
             for k in all_keys if v1.get(k) != v2.get(k)
         ]
-        return {"changes": changes}
+        save_dir = director.node_save_dir(slot_name, sha2)
+        return {"changes": changes, "save_dir": save_dir}
 
     @app.get("/api/spaces/{space_id}/slots/{slot_name}/state/{sha}")
     def api_state(space_id: str, slot_name: str, sha: str) -> dict[str, Any]:
         space = get_space_or_404(space_id)
+        director = make_director(space)
         db = make_db(space)
         states = db.get_all_states([sha])
-        return {"variables": states.get(sha, {})}
+        save_dir = director.node_save_dir(slot_name, sha)
+        return {"variables": states.get(sha, {}), "save_dir": save_dir}
 
     @app.get("/api/spaces/{space_id}/slots/{slot_name}/states")
     def api_all_states(space_id: str, slot_name: str, vars: str = "") -> dict[str, Any]:
@@ -390,7 +402,8 @@ def create_app(config_path: Path) -> FastAPI:
         return Response(
             content=png_bytes,
             media_type="image/png",
-            headers={"Cache-Control": "max-age=3600"},
+            # Keyed by commit sha, so the bytes never change under a given URL.
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
         )
 
     # -- director actions ----------------------------------------------------
@@ -431,11 +444,23 @@ def create_app(config_path: Path) -> FastAPI:
         space_id: str, slot_name: str, body: dict[str, Any] = Body(...)
     ) -> dict[str, Any]:
         from .library import GitError
+        from .watcher import SaveDirRequiredError
         director = make_director(get_space_or_404(space_id))
         sha = body["sha"]
         new_branch = body.get("branch_name", "").strip() or None
+        target_save_dir = body.get("target_save_dir", "").strip() or None
         try:
-            info = director.switch_to(slot_name, sha, new_branch=new_branch)
+            info = director.switch_to(
+                slot_name, sha, new_branch=new_branch, target_save_dir=target_save_dir
+            )
+        except SaveDirRequiredError as err:
+            raise HTTPException(
+                400,
+                detail={
+                    "error": "SAVE_DIR_REQUIRED",
+                    "saves_dirs": [str(d) for d in err.dirs],
+                },
+            )
         except GitError as e:
             raise HTTPException(400, str(e))
         return {"sha": info.sha, "short": info.short, "branch": info.branch}
