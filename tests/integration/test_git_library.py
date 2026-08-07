@@ -66,6 +66,28 @@ def test_git_node_deletion_reparent(tmp_workspace):
 
 
 @pytest.mark.integration
+def test_reparent_delete_keeps_descendant_notes(tmp_workspace):
+    """Reparenting rebases descendants; their notes must ride along to the new SHAs."""
+    space = tmp_workspace["space"]
+    slot_file = tmp_workspace["slot_file"]
+    director = Director(space)
+
+    slot_file.write_bytes(create_mock_save_zip({"money": 200}, "chapter_1"))
+    sha2 = director.ingest("1-1-LT1").commit.sha
+
+    slot_file.write_bytes(create_mock_save_zip({"money": 300}, "chapter_2"))
+    sha3 = director.ingest("1-1-LT1").commit.sha
+    director.library.set_note(sha3, "keep me")
+
+    director.delete_node("1-1-LT1", sha2, strategy="reparent")
+
+    tip = director.library.head()
+    assert tip.sha != sha3, "descendant should have been rewritten"
+    notes = {n.sha: n.note for n in director.library.dag()}
+    assert notes[tip.sha] == "keep me"
+
+
+@pytest.mark.integration
 def test_git_multiple_restores_preserve_history(tmp_workspace):
     space = tmp_workspace["space"]
     slot_file = tmp_workspace["slot_file"]
