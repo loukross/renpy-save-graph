@@ -40,8 +40,13 @@ META_REF = "refs/notes/meta"
 _SEP = "\x1f"  # unit separator (fields within a commit)
 _REC = "\x1e"  # record separator (between commits)
 
+# Space-level metadata that isn't keyed by commit, so it has no place in a note.
+# Its own branch, holding one file, never merged into a slot's history.
+MANIFEST_BRANCH = "_meta"
+MANIFEST = "manifest.json"
+
 # Branch identifiers that are never shown as user-visible names.
-_UNNAMED_BRANCHES = {"master", "main", "_root", "(detached)", ""}
+_UNNAMED_BRANCHES = {"master", "main", "_root", MANIFEST_BRANCH, "(detached)", ""}
 
 def clear_dag_cache(lib_path: str | Path | None = None) -> None:
     pass
@@ -83,11 +88,12 @@ class Library:
         self.path = Path(path)
 
     # -- git plumbing --------------------------------------------------------
-    def _git(self, *args: str, capture: bool = False) -> str:
+    def _git(self, *args: str, capture: bool = False, stdin: str | None = None) -> str:
         result = subprocess.run(
             ["git", *args],
             cwd=str(self.path),
             text=True,
+            input=stdin,
             stdout=subprocess.PIPE if capture else None,
             stderr=subprocess.PIPE,
             check=False,
@@ -202,11 +208,12 @@ class Library:
     def dag(self) -> list[NodeInfo]:
         """All slot commits across all branches (excludes the root commit).
 
-        `--branches`, not `--all`: the latter also walks refs/notes/*, whose
-        commits are metadata bookkeeping rather than save points.
+        Not `--all`, which also walks refs/notes/*, and not the manifest
+        branch: neither holds save points.
         """
         root = self._root_sha()
-        return self._dag("--branches", f"^{root}", exclude_parent=root)
+        return self._dag(f"--exclude={MANIFEST_BRANCH}", "--branches",
+                         f"^{root}", exclude_parent=root)
 
     def dag_for_branch(self, branch: str) -> list[NodeInfo]:
         """Slot commits on branch only, excluding the shared root ancestor."""
@@ -314,12 +321,13 @@ class Library:
     def meta_all(self) -> dict[str, dict[str, Any]]:
         """sha → meta dict for every branch commit, in one git call.
 
-        `--branches` rather than `--all`: the latter also walks refs/notes/*,
-        whose own commits are not save points.
+        Scoped the same way as `dag`: refs/notes/* and the manifest branch are
+        bookkeeping, not save points.
         """
         try:
             raw = self._git(
-                "log", "--branches", "--no-notes", f"--notes={META_REF}",
+                "log", f"--exclude={MANIFEST_BRANCH}", "--branches",
+                "--no-notes", f"--notes={META_REF}",
                 f"--format=tformat:%H{_SEP}%N{_REC}", capture=True,
             )
         except GitError:
@@ -353,6 +361,64 @@ class Library:
                 self._git("notes", f"--ref={META_REF}", "remove", sha)
             except GitError:
                 pass
+
+    # -- space manifest ------------------------------------------------------
+
+    def read_manifest(self) -> dict[str, Any]:
+        """The space-level settings a clone of this library carries with it."""
+        try:
+            return json.loads(self._git("show", f"{MANIFEST_BRANCH}:{MANIFEST}", capture=True))
+        except (GitError, ValueError):
+            return {}
+
+    def write_manifest(self, data: dict[str, Any]) -> None:
+        """Commit `data` to the manifest branch.
+
+        Builds the commit out of git objects directly instead of checking the
+        branch out: the working tree holds the save point currently materialized
+        into the player's slot, and HEAD is the branch ingest commits onto.  A
+        branch switch would swap that file out mid-session, and a watcher poll
+        landing in the same window would commit a save point onto _meta.  This
+        way touches no index, no working tree, and no HEAD.
+        """
+        blob = self._git("hash-object", "-w", "--stdin", capture=True,
+                         stdin=json.dumps(data, indent=2, sort_keys=True))
+        tree = self._git("mktree", capture=True, stdin=f"100644 blob {blob}\t{MANIFEST}\n")
+        parent: list[str] = []
+        try:
+            parent = ["-p", self._git("rev-parse", f"refs/heads/{MANIFEST_BRANCH}", capture=True)]
+        except GitError:
+            pass  # first write; the branch is born here
+        commit = self._git("commit-tree", tree, *parent, "-m", "update manifest", capture=True)
+        self._git("update-ref", f"refs/heads/{MANIFEST_BRANCH}", commit)
+
+    # -- tags ----------------------------------------------------------------
+
+    @staticmethod
+    def _clean_tag(tag_name: str) -> str:
+        return tag_name.strip().lstrip("#").lower()
+
+    def tags_all(self) -> dict[str, list[str]]:
+        """sha → its tags, for every commit that has any."""
+        return {
+            sha: sorted(meta["tags"])
+            for sha, meta in self.meta_all().items()
+            if meta.get("tags")
+        }
+
+    def add_tag(self, sha: str, tag_name: str) -> None:
+        tag = self._clean_tag(tag_name)
+        if not tag:
+            return
+        tags = set(self.get_meta(sha).get("tags", []))
+        tags.add(tag)
+        self.set_meta(sha, tags=sorted(tags))
+
+    def remove_tag(self, sha: str, tag_name: str) -> None:
+        tags = set(self.get_meta(sha).get("tags", []))
+        tags.discard(self._clean_tag(tag_name))
+        # An empty list would linger as an empty note; None drops the key.
+        self.set_meta(sha, tags=sorted(tags) or None)
 
     def diff_state(self, sha1: str, sha2: str) -> dict[str, tuple[Any, Any]]:
         """Variables that changed between two commits (sorted by name)."""
