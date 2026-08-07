@@ -209,9 +209,11 @@ def test_restore_legacy_commit_without_save_dir_metadata(dirs):
     director = make_director(lib, ep1, ep9)
     res = director.ingest_all()[0]
 
-    # Amend the commit message to strip save_dir metadata (simulating old version ingest)
+    # Simulate an old version's ingest, which recorded no saves dir at all.
     director.library._git("commit", "--amend", "-m", "legacy commit without save_dir")
     legacy_sha = director.library.head().sha
+    # `notes.rewrite.amend` copied the note onto the new sha; drop it too.
+    director.library._git("notes", "--ref=meta", "remove", legacy_sha)
 
     # Ingest a newer save in ep9
     (ep9 / "1-1-LT1.save").write_bytes(create_mock_save_zip({"money": 500}, "ep9_save"))
@@ -247,7 +249,8 @@ def test_setting_a_save_dir_fills_in_unrecorded_descendants(dirs):
         shas.append(director.ingest_all()[0].commit.sha)
 
     # A library from before save dirs were recorded has no entries at all.
-    (lib / ".slot_save_dirs.json").write_text("{}")
+    director.library._git("update-ref", "-d", "refs/notes/meta")
+    director._dir_indexes = None
 
     director.set_save_dir_subtree("1-1-LT1", shas[1], str(ep9))
 
@@ -272,4 +275,43 @@ def test_setting_a_save_dir_overwrites_recorded_descendants(dirs):
 
     assert director.node_save_dir("1-1-LT1", parent) == str(ep1)
     assert director.node_save_dir("1-1-LT1", child) == str(ep1)
+
+
+@pytest.mark.integration
+def test_legacy_save_dir_file_migrates_into_meta_notes(dirs):
+    """The old sha → absolute-path file folds into meta notes and is removed."""
+    lib, ep1, ep9 = dirs
+    director = make_director(lib, ep1, ep9)
+    (ep1 / "1-1-LT1.save").write_bytes(create_mock_save_zip({"money": 100}, "c1"))
+    sha = director.ingest_all()[0].commit.sha
+
+    # Rewind to the old on-disk form: a path in a JSON file, nothing in git.
+    director.library._git("update-ref", "-d", "refs/notes/meta")
+    legacy = lib / ".slot_save_dirs.json"
+    legacy.write_text(json.dumps({sha: str(ep9)}))
+
+    migrated = make_director(lib, ep1, ep9)  # migration runs in __init__
+
+    assert not legacy.exists()
+    assert migrated.library.get_meta(sha) == {"save_dir_index": 1}
+    assert migrated.node_save_dir("1-1-LT1", sha) == str(ep9)
+
+
+@pytest.mark.integration
+def test_save_dir_survives_reparent_delete(dirs):
+    """Deleting an ancestor rebases descendants; their saves dir must follow."""
+    lib, ep1, ep9 = dirs
+    director = make_director(lib, ep1, ep9)
+    (ep1 / "1-1-LT1.save").write_bytes(create_mock_save_zip({"money": 100}, "c1"))
+    director.ingest_all()
+    (ep1 / "1-1-LT1.save").write_bytes(create_mock_save_zip({"money": 200}, "c2"))
+    doomed = director.ingest_all()[0].commit.sha
+    (ep9 / "1-1-LT1.save").write_bytes(create_mock_save_zip({"money": 300}, "c3"))
+    last = director.ingest_all()[0].commit.sha
+
+    director.delete_node("1-1-LT1", doomed, strategy="reparent")
+
+    tip = director.library.head().sha
+    assert tip != last, "descendant should have been rewritten"
+    assert director.node_save_dir("1-1-LT1", tip) == str(ep9)
 

@@ -30,6 +30,12 @@ from .thumbnail import optimize_save_thumbnail, restamp_save
 BLOB = "save.save"
 STATE = "state.json"
 
+# Per-node metadata the app owns, kept in its own notes ref so `notes.rewriteRef`
+# carries it across the rebase in `delete_node_reparent`, and so user note text
+# stays readable inline as %N in the DAG walk.  Unlike the working tree, it is
+# keyed by commit and travels with a clone.
+META_REF = "refs/notes/meta"
+
 
 _SEP = "\x1f"  # unit separator (fields within a commit)
 _REC = "\x1e"  # record separator (between commits)
@@ -100,6 +106,11 @@ class Library:
             lib._git("init", "-q")
             lib._git("config", "user.name", "renpy-save-graph")
             lib._git("config", "user.email", "save-graph@localhost")
+        # Git only carries notes onto rewritten commits when this is set, and it
+        # has no default.  Without it, deleting a node with the reparent strategy
+        # rebases every descendant and silently drops their notes.  Set outside
+        # the init branch above so libraries created before this also get it.
+        lib._git("config", "notes.rewriteRef", "refs/notes/*")
         lib._init_root()
         return lib
 
@@ -189,9 +200,13 @@ class Library:
     # -- graph / diff -------------------------------------------------------
 
     def dag(self) -> list[NodeInfo]:
-        """All slot commits across all branches (excludes the root commit)."""
+        """All slot commits across all branches (excludes the root commit).
+
+        `--branches`, not `--all`: the latter also walks refs/notes/*, whose
+        commits are metadata bookkeeping rather than save points.
+        """
         root = self._root_sha()
-        return self._dag("--all", f"^{root}", exclude_parent=root)
+        return self._dag("--branches", f"^{root}", exclude_parent=root)
 
     def dag_for_branch(self, branch: str) -> list[NodeInfo]:
         """Slot commits on branch only, excluding the shared root ancestor."""
@@ -293,6 +308,51 @@ class Library:
             except GitError:
                 pass
         clear_dag_cache(self.path)
+
+    # -- portable per-node metadata ------------------------------------------
+
+    def meta_all(self) -> dict[str, dict[str, Any]]:
+        """sha → meta dict for every branch commit, in one git call.
+
+        `--branches` rather than `--all`: the latter also walks refs/notes/*,
+        whose own commits are not save points.
+        """
+        try:
+            raw = self._git(
+                "log", "--branches", "--no-notes", f"--notes={META_REF}",
+                f"--format=tformat:%H{_SEP}%N{_REC}", capture=True,
+            )
+        except GitError:
+            return {}
+        out: dict[str, dict[str, Any]] = {}
+        for record in filter(None, raw.split(_REC)):
+            sha, _, note = record.strip("\n").partition(_SEP)
+            if not note.strip():
+                continue
+            try:
+                out[sha.strip()] = json.loads(note)
+            except ValueError:
+                continue  # hand-edited or from a newer schema; ignore
+        return out
+
+    def get_meta(self, sha: str) -> dict[str, Any]:
+        try:
+            return json.loads(self._git("notes", f"--ref={META_REF}", "show", sha, capture=True))
+        except (GitError, ValueError):
+            return {}
+
+    def set_meta(self, sha: str, **fields: Any) -> None:
+        """Merge `fields` into sha's meta note; a None value drops that key."""
+        data = {**self.get_meta(sha), **fields}
+        data = {k: v for k, v in data.items() if v is not None}
+        if data:
+            self._git("notes", f"--ref={META_REF}", "add", "-f", "-m",
+                      json.dumps(data, separators=(",", ":")), sha)
+        else:
+            try:
+                self._git("notes", f"--ref={META_REF}", "remove", sha)
+            except GitError:
+                pass
 
     def diff_state(self, sha1: str, sha2: str) -> dict[str, tuple[Any, Any]]:
         """Variables that changed between two commits (sorted by name)."""
