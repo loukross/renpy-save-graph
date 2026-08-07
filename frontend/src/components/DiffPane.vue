@@ -10,10 +10,33 @@
         <template v-else>Select a save point</template>
       </div>
       <div id="diff-subtitle">{{ node ? node.subject : '' }}</div>
+      <div v-if="node" style="font-size:12px;color:var(--text-dim);margin-top:4px">
+        <span>Save Dir: {{ currentSaveDir || 'Unassigned' }}</span>
+        <template v-if="hasMultipleSavesDirs">
+          <a
+            v-if="currentSaveDir"
+            href="#"
+            style="color:var(--accent);margin-left:6px;text-decoration:underline"
+            @click.prevent="$emit('change-save-dir')"
+          >(Change)</a>
+          <a
+            v-else
+            href="#"
+            style="color:#e06060;margin-left:6px;text-decoration:underline"
+            @click.prevent="$emit('change-save-dir')"
+          >(Specify save directory to enable Restore)</a>
+        </template>
+      </div>
     </div>
 
     <div v-if="node" id="restore-bar">
-      <button v-if="!node.is_head" class="btn-secondary" :disabled="restoring" @click="$emit('restore')">
+      <button
+        v-if="!node.is_head"
+        class="btn-secondary"
+        :disabled="restoring || !currentSaveDir"
+        :title="!currentSaveDir ? 'Specify save directory to enable Restore' : 'Restore to Game'"
+        @click="$emit('restore')"
+      >
         {{ restoring ? 'Restoring…' : '← Restore to Game' }}
       </button>
       <button
@@ -82,14 +105,26 @@ import { ref, computed } from 'vue';
 const props = defineProps({
   node: Object,
   diffData: Object,
+  saveDir: String,
   loading: Boolean,
   restoring: Boolean,
+  hasMultipleSavesDirs: Boolean,
 });
 
-defineEmits(['restore', 'delete']);
+defineEmits(['restore', 'delete', 'change-save-dir']);
 
 const varFilter = ref('^[^_]');
 const hideRemoved = ref(true);
+
+const currentSaveDir = computed(() => {
+  if (props.saveDir !== undefined && props.saveDir !== null) {
+    return props.saveDir;
+  }
+  if (props.diffData && props.diffData.save_dir !== undefined && props.diffData.save_dir !== null) {
+    return props.diffData.save_dir;
+  }
+  return props.node ? props.node.save_dir : null;
+});
 
 const filteredChanges = computed(() => {
   if (!props.diffData || !props.diffData.changes) return [];

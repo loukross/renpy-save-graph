@@ -23,6 +23,7 @@ from .thumbnail import restamp_save
 
 _SLOT_HASHES_FILE = ".slot_hashes.json"
 _SLOT_BRANCHES_FILE = ".slot_branches.json"
+_SLOT_SAVE_DIRS_FILE = ".slot_save_dirs.json"
 
 
 @dataclass
@@ -37,6 +38,12 @@ class SpaceConfig:
     library_path: Path
     slot_exclude: str = ""  # regex; matching slot names are ignored
     additional_saves_dirs: list[Path] = field(default_factory=list)
+
+
+class SaveDirRequiredError(RuntimeError):
+    def __init__(self, dirs: list[Path]) -> None:
+        super().__init__("Multiple save directories exist; target_save_dir required")
+        self.dirs = dirs
 
 
 class Director:
@@ -133,6 +140,28 @@ class Director:
     def _active_branch(self, slot_name: str) -> str:
         return self._load_branches().get(slot_name, slot_name)
 
+    def _load_save_dirs(self) -> dict[str, str]:
+        """Maps commit sha → the configured saves dir that save came from."""
+        p = Path(self.config.library_path) / _SLOT_SAVE_DIRS_FILE
+        if not p.exists():
+            return {}
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _save_save_dirs(self, dirs: dict[str, str]) -> None:
+        p = Path(self.config.library_path) / _SLOT_SAVE_DIRS_FILE
+        p.write_text(json.dumps(dirs), encoding="utf-8")
+
+    def _configured_dir(self, path: Path) -> str | None:
+        """The configured spelling of `path`, so stored values match the config."""
+        target = Path(path).expanduser()
+        for raw in [self.config.saves_dir, *self.config.additional_saves_dirs]:
+            if Path(raw).expanduser() == target:
+                return str(raw)
+        return None
+
     def _sha256(self, path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -215,6 +244,12 @@ class Director:
 
         sp.write_bytes(restamp_save(sp.read_bytes(), commit_info.stamp_text()))
 
+        configured = self._configured_dir(sp.parent)
+        if configured:
+            dirs = self._load_save_dirs()
+            dirs[commit_info.sha] = configured
+            self._save_save_dirs(dirs)
+
         self._record_hash(hashes, slot_name, sp)
         self._save_hashes(hashes)
         return IngestResult(slot_name=slot_name, commit=commit_info)
@@ -240,10 +275,88 @@ class Director:
                 results.append(result)
         return results
 
+    def node_save_dir(self, slot_name: str, sha: str) -> str | None:
+        """A node's saves dir, inherited from the nearest ancestor that has one."""
+        dirs = self._load_save_dirs()
+        node_map = {n.sha: n for n in self._lib.dag_for_slot(slot_name, self.slot_names())}
+
+        queue = [sha]
+        visited = set()
+        while queue:
+            curr = queue.pop(0)
+            if curr in visited:
+                continue
+            visited.add(curr)
+            if curr in dirs:
+                return dirs[curr]
+            node = node_map.get(curr)
+            if node:
+                queue.extend(node.parents)
+
+        all_dirs = self.all_saves_dirs
+        return str(all_dirs[0]) if len(all_dirs) == 1 else None
+
+    def set_save_dir_subtree(self, slot_name: str, sha: str, save_dir: str) -> None:
+        """Assign `save_dir` to `sha` and its whole subtree, overwriting any existing.
+
+        Unconditional so a tree recorded before saves dirs were tracked can be
+        corrected in one go.
+        """
+        save_dir = (save_dir or "").strip()
+        if not save_dir:
+            return
+        dirs = self._load_save_dirs()
+
+        children: dict[str, list[str]] = {}
+        for n in self._lib.dag_for_slot(slot_name, self.slot_names()):
+            for p in n.parents:
+                children.setdefault(p, []).append(n.sha)
+
+        queue = [sha]
+        visited = set()
+        while queue:
+            curr = queue.pop(0)
+            if curr in visited:
+                continue
+            visited.add(curr)
+            dirs[curr] = save_dir
+            queue.extend(children.get(curr, []))
+
+        self._save_save_dirs(dirs)
+
+    def restore_path(
+        self, slot_name: str, commitish: str, target_save_dir: str | Path | None = None
+    ) -> Path:
+        """Determine which save file path to overwrite when restoring commitish.
+
+        1. Check explicit target_save_dir supplied by user via modal.
+        2. Check node_save_dir (notes, commit metadata, ancestor inheritance).
+        3. Otherwise raise SaveDirRequiredError.
+        """
+        all_dirs = self.all_saves_dirs
+        if not all_dirs:
+            return Path(f"{slot_name}.save")
+        if len(all_dirs) == 1:
+            return all_dirs[0] / f"{slot_name}.save"
+
+        for candidate in (target_save_dir, self.node_save_dir(slot_name, commitish)):
+            if not candidate:
+                continue
+            target = Path(candidate).expanduser()
+            for d in all_dirs:
+                if d == target:
+                    return d / f"{slot_name}.save"
+
+        raise SaveDirRequiredError(all_dirs)
+
     # -- route switching -----------------------------------------------------
 
     def switch_to(
-        self, slot_name: str, commitish: str, new_branch: str | None = None
+        self,
+        slot_name: str,
+        commitish: str,
+        new_branch: str | None = None,
+        target_save_dir: str | Path | None = None,
     ) -> CommitInfo:
         """Materialize a commit into a slot file."""
         if new_branch is not None:
@@ -263,7 +376,7 @@ class Director:
             info = CommitInfo(sha=info.sha, short=info.short, branch=slot_name, subject=info.subject, when=info.when)
 
         stamp_name = target_branch if target_branch and len(target_branch) < 40 else slot_name
-        sp = self.slot_path(slot_name)
+        sp = self.restore_path(slot_name, info.sha, target_save_dir=target_save_dir)
         self._lib.materialize(sp, stamp=True, stamp_name=stamp_name)
         hashes = self._load_hashes()
         self._record_hash(hashes, slot_name, sp)
@@ -294,7 +407,7 @@ class Director:
         active = self._active_branch(slot_name)
         try:
             self._lib.ensure_branch(active)
-            sp = self.slot_path(slot_name)
+            sp = self.restore_path(slot_name, active)
             self._lib.materialize(sp, stamp=True, stamp_name=active)
             hashes = self._load_hashes()
             self._record_hash(hashes, slot_name, sp)

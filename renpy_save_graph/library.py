@@ -23,11 +23,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+
 from . import extractor
 from .thumbnail import optimize_save_thumbnail, restamp_save
 
 BLOB = "save.save"
 STATE = "state.json"
+
 
 _SEP = "\x1f"  # unit separator (fields within a commit)
 _REC = "\x1e"  # record separator (between commits)

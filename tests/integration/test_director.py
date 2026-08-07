@@ -5,7 +5,7 @@ import json
 import pytest
 from pathlib import Path
 
-from renpy_save_graph.watcher import Director, SpaceConfig
+from renpy_save_graph.watcher import Director, SpaceConfig, SaveDirRequiredError
 from tests.conftest import create_mock_save_zip
 
 
@@ -155,3 +155,121 @@ def test_restore_does_not_trigger_a_phantom_commit(dirs):
     assert director.ingest_all() == []
     assert director.ingest_all() == []
     assert director.library.branch_tips() == after_restore
+
+
+@pytest.mark.integration
+def test_restore_targets_correct_saves_dir_for_earlier_save(dirs):
+    """Restoring an earlier commit made in primary dir restores to primary dir even if secondary dir has newer saves."""
+    lib, ep1, ep9 = dirs
+    (ep1 / "1-1-LT1.save").write_bytes(create_mock_save_zip({"money": 100}, "ep1_save"))
+    director = make_director(lib, ep1, ep9)
+    first_commit = director.ingest_all()[0].commit.sha
+
+    # Player makes a save in Episode 9 (secondary dir)
+    (ep9 / "1-1-LT1.save").write_bytes(create_mock_save_zip({"money": 500}, "ep9_save"))
+    second_commit = director.ingest_all()[0].commit.sha
+    ep9_bytes = (ep9 / "1-1-LT1.save").read_bytes()
+
+    # Restore to first commit (made in ep1)
+    director.switch_to("1-1-LT1", first_commit)
+
+    # Verify ep1 file was restored to first_commit contents (money=100)
+    # and ep9 file was left untouched
+    assert director.restore_path("1-1-LT1", first_commit) == ep1 / "1-1-LT1.save"
+    assert (ep9 / "1-1-LT1.save").read_bytes() == ep9_bytes
+
+
+@pytest.mark.integration
+def test_restore_legacy_save_predating_multiple_saves(dirs):
+    """Restoring a commit with recorded save_dir metadata targets that dir even when additional save dirs are configured later."""
+    lib, ep1, ep9 = dirs
+    primary_save = ep1 / "1-1-LT1.save"
+    primary_save.write_bytes(create_mock_save_zip({"money": 100}, "legacy"))
+
+    # Initial space before additional saves dirs were configured
+    single_dir_director = Director(SpaceConfig(saves_dir=ep1, library_path=lib))
+    first_commit = single_dir_director.ingest_all()[0].commit.sha
+
+    # Player later configures additional_saves_dirs and saves in ep9
+    (ep9 / "1-1-LT1.save").write_bytes(create_mock_save_zip({"money": 500}, "ep9"))
+    multi_dir_director = make_director(lib, ep1, ep9)
+    multi_dir_director.ingest_all()
+
+    # The commit records ep1 as save_dir, so restore_path resolves to ep1
+    assert multi_dir_director.restore_path("1-1-LT1", first_commit) == ep1 / "1-1-LT1.save"
+    multi_dir_director.switch_to("1-1-LT1", first_commit)
+    assert (ep1 / "1-1-LT1.save").read_bytes() != b""
+
+
+@pytest.mark.integration
+def test_restore_legacy_commit_without_save_dir_metadata(dirs):
+    """Commits without save_dir metadata line raise SaveDirRequiredError when multiple dirs exist."""
+    lib, ep1, ep9 = dirs
+    (ep1 / "1-1-LT1.save").write_bytes(create_mock_save_zip({"money": 100}, "old_ver"))
+    director = make_director(lib, ep1, ep9)
+    res = director.ingest_all()[0]
+
+    # Amend the commit message to strip save_dir metadata (simulating old version ingest)
+    director.library._git("commit", "--amend", "-m", "legacy commit without save_dir")
+    legacy_sha = director.library.head().sha
+
+    # Ingest a newer save in ep9
+    (ep9 / "1-1-LT1.save").write_bytes(create_mock_save_zip({"money": 500}, "ep9_save"))
+    director.ingest_all()
+
+    # Verify SaveDirRequiredError is raised unless target_save_dir is provided
+    with pytest.raises(SaveDirRequiredError):
+        director.restore_path("1-1-LT1", legacy_sha)
+
+    assert director.restore_path("1-1-LT1", legacy_sha, target_save_dir=ep9) == ep9 / "1-1-LT1.save"
+
+
+@pytest.mark.integration
+def test_ingest_records_which_saves_dir_a_commit_came_from(dirs):
+    lib, ep1, ep9 = dirs
+    director = make_director(lib, ep1, ep9)
+    (ep1 / "1-1-LT1.save").write_bytes(create_mock_save_zip({"money": 100}, "c1"))
+    sha1 = director.ingest_all()[0].commit.sha
+    (ep9 / "1-1-LT1.save").write_bytes(create_mock_save_zip({"money": 200}, "c2"))
+    sha2 = director.ingest_all()[0].commit.sha
+
+    assert director.node_save_dir("1-1-LT1", sha1) == str(ep1)
+    assert director.node_save_dir("1-1-LT1", sha2) == str(ep9)
+
+
+@pytest.mark.integration
+def test_setting_a_save_dir_fills_in_unrecorded_descendants(dirs):
+    lib, ep1, ep9 = dirs
+    director = make_director(lib, ep1, ep9)
+    shas = []
+    for money in (100, 200, 300):
+        (ep1 / "1-1-LT1.save").write_bytes(create_mock_save_zip({"money": money}, f"c{money}"))
+        shas.append(director.ingest_all()[0].commit.sha)
+
+    # A library from before save dirs were recorded has no entries at all.
+    (lib / ".slot_save_dirs.json").write_text("{}")
+
+    director.set_save_dir_subtree("1-1-LT1", shas[1], str(ep9))
+
+    assert director.node_save_dir("1-1-LT1", shas[1]) == str(ep9)
+    assert director.node_save_dir("1-1-LT1", shas[2]) == str(ep9)
+    # Upstream of the change, so still nothing to inherit.
+    assert director.node_save_dir("1-1-LT1", shas[0]) is None
+
+
+@pytest.mark.integration
+def test_setting_a_save_dir_overwrites_recorded_descendants(dirs):
+    """Bulk correction: the whole subtree takes the new directory."""
+    lib, ep1, ep9 = dirs
+    director = make_director(lib, ep1, ep9)
+    (ep1 / "1-1-LT1.save").write_bytes(create_mock_save_zip({"money": 100}, "c1"))
+    parent = director.ingest_all()[0].commit.sha
+    (ep9 / "1-1-LT1.save").write_bytes(create_mock_save_zip({"money": 200}, "c2"))
+    child = director.ingest_all()[0].commit.sha
+    assert director.node_save_dir("1-1-LT1", child) == str(ep9)
+
+    director.set_save_dir_subtree("1-1-LT1", parent, str(ep1))
+
+    assert director.node_save_dir("1-1-LT1", parent) == str(ep1)
+    assert director.node_save_dir("1-1-LT1", child) == str(ep1)
+
