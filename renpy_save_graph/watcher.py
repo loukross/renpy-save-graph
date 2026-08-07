@@ -53,6 +53,8 @@ class Director:
         self.config = config
         self._lib = Library.init(config.library_path)
         self._exclude_re = re.compile(config.slot_exclude) if config.slot_exclude else None
+        self._dir_indexes: dict[str, int] | None = None
+        self._migrate_save_dirs()
 
     @property
     def library(self) -> Library:
@@ -140,27 +142,57 @@ class Director:
     def _active_branch(self, slot_name: str) -> str:
         return self._load_branches().get(slot_name, slot_name)
 
-    def _load_save_dirs(self) -> dict[str, str]:
-        """Maps commit sha → the configured saves dir that save came from."""
-        p = Path(self.config.library_path) / _SLOT_SAVE_DIRS_FILE
-        if not p.exists():
-            return {}
-        try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
+    def _dir_index(self, path: Path) -> int | None:
+        """`path`'s position in all_saves_dirs — the portable form of a save dir.
 
-    def _save_save_dirs(self, dirs: dict[str, str]) -> None:
-        p = Path(self.config.library_path) / _SLOT_SAVE_DIRS_FILE
-        p.write_text(json.dumps(dirs), encoding="utf-8")
-
-    def _configured_dir(self, path: Path) -> str | None:
-        """The configured spelling of `path`, so stored values match the config."""
-        target = Path(path).expanduser()
-        for raw in [self.config.saves_dir, *self.config.additional_saves_dirs]:
-            if Path(raw).expanduser() == target:
-                return str(raw)
+        An index survives a move to another machine (where absolute paths do
+        not), so it is what gets recorded against a commit.
+        """
+        target = Path(path).expanduser().resolve()
+        for i, d in enumerate(self.all_saves_dirs):
+            if d.resolve() == target:
+                return i
         return None
+
+    def _save_dir_indexes(self) -> dict[str, int]:
+        """sha → save dir index, read once per Director (one per request)."""
+        if self._dir_indexes is None:
+            self._dir_indexes = {
+                sha: meta["save_dir_index"]
+                for sha, meta in self._lib.meta_all().items()
+                if isinstance(meta.get("save_dir_index"), int)
+            }
+        return self._dir_indexes
+
+    def _record_save_dir(self, sha: str, index: int) -> None:
+        self._lib.set_meta(sha, save_dir_index=index)
+        self._dir_indexes = None
+
+    def _migrate_save_dirs(self) -> None:
+        """Fold the legacy sha → absolute-path file into meta notes, then drop it.
+
+        The old file recorded this machine's paths and was untracked, so it never
+        travelled with a clone.  An entry whose path no longer matches any
+        configured dir cannot be resolved to an index and is dropped -- it was
+        already dead, since restore matched those paths exactly.
+        """
+        legacy = Path(self.config.library_path) / _SLOT_SAVE_DIRS_FILE
+        if not legacy.exists():
+            return
+        try:
+            stored = json.loads(legacy.read_text(encoding="utf-8"))
+        except Exception:
+            stored = {}
+        for sha, raw_dir in stored.items():
+            index = self._dir_index(Path(raw_dir))
+            if index is None:
+                continue
+            try:
+                self._lib.set_meta(sha, save_dir_index=index)
+            except GitError:
+                continue  # commit no longer exists (deleted node)
+        self._dir_indexes = None
+        legacy.unlink()
 
     def _sha256(self, path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -244,11 +276,9 @@ class Director:
 
         sp.write_bytes(restamp_save(sp.read_bytes(), commit_info.stamp_text()))
 
-        configured = self._configured_dir(sp.parent)
-        if configured:
-            dirs = self._load_save_dirs()
-            dirs[commit_info.sha] = configured
-            self._save_save_dirs(dirs)
+        index = self._dir_index(sp.parent)
+        if index is not None:
+            self._record_save_dir(commit_info.sha, index)
 
         self._record_hash(hashes, slot_name, sp)
         self._save_hashes(hashes)
@@ -277,7 +307,8 @@ class Director:
 
     def node_save_dir(self, slot_name: str, sha: str) -> str | None:
         """A node's saves dir, inherited from the nearest ancestor that has one."""
-        dirs = self._load_save_dirs()
+        indexes = self._save_dir_indexes()
+        all_dirs = self.all_saves_dirs
         node_map = {n.sha: n for n in self._lib.dag_for_slot(slot_name, self.slot_names())}
 
         queue = [sha]
@@ -287,13 +318,13 @@ class Director:
             if curr in visited:
                 continue
             visited.add(curr)
-            if curr in dirs:
-                return dirs[curr]
+            index = indexes.get(curr)
+            if index is not None and index < len(all_dirs):
+                return str(all_dirs[index])
             node = node_map.get(curr)
             if node:
                 queue.extend(node.parents)
 
-        all_dirs = self.all_saves_dirs
         return str(all_dirs[0]) if len(all_dirs) == 1 else None
 
     def set_save_dir_subtree(self, slot_name: str, sha: str, save_dir: str) -> None:
@@ -305,7 +336,9 @@ class Director:
         save_dir = (save_dir or "").strip()
         if not save_dir:
             return
-        dirs = self._load_save_dirs()
+        index = self._dir_index(Path(save_dir))
+        if index is None:
+            return
 
         children: dict[str, list[str]] = {}
         for n in self._lib.dag_for_slot(slot_name, self.slot_names()):
@@ -319,10 +352,10 @@ class Director:
             if curr in visited:
                 continue
             visited.add(curr)
-            dirs[curr] = save_dir
+            self._lib.set_meta(curr, save_dir_index=index)
             queue.extend(children.get(curr, []))
 
-        self._save_save_dirs(dirs)
+        self._dir_indexes = None
 
     def restore_path(
         self, slot_name: str, commitish: str, target_save_dir: str | Path | None = None
@@ -403,6 +436,7 @@ class Director:
             removed = self._lib.delete_node_cascade(sha)
         else:
             removed = self._lib.delete_node_reparent(sha)
+        self._dir_indexes = None  # reparenting rewrote the shas we cached
 
         active = self._active_branch(slot_name)
         try:
