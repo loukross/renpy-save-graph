@@ -27,7 +27,7 @@ jobs:
 
       - name: Open changelog PR
         id: cpr
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.CHANGELOG_PAT }}
           commit-message: "chore(release): update CHANGELOG.md"
