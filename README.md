@@ -54,18 +54,31 @@ The launcher script installs the Python package, builds the web UI (`npm install
 
 ---
 
-## ⚠️ Usage Notes
-
-- I recommend against sharing save-graph libraries created by this app (or any `.save` file) with others. [Ren'Py's security documentation](https://www.renpy.org/doc/html/security.html) warns that loading a file in the format used for Ren'Py saves can execute arbitrary code.
-
----
-
 ## ✨ Feature Notes
 
 - **Multi-folder save tracking**: Some Ren'Py games are distributed in multiple packages with later episodes installed separately and thus will have multiple save folders. The user can add save folders to track, and this app will ingest all save files with the same name into a single graph for each slot position.  This feature will assume all given folders are for the same game title and that files are named with the same pattern for all save slots.
 - **Lineage Validity Checks**: Give a Gamespace an optional expression (like the Graph Filter Expression, e.g. `delta('karma') >= 0`) qualifying a save as valid and/or what a valid difference is between a save and its preceding save. Any node where it evaluates false gets flagged an "Invalid lineage detected" label. This helps to catch accidental saves of "past state" over "future state" (from backtracking in-game or from other save slots). What makes a good check will vary by game title.
 - **Milestone Progress Alignment**: Define variables like `currentEpisode` as milestones and see saves for all your playthroughs line up at a vertical wherever each one reaches them.
 - **Route Targets**: Flag subtrees where your play is off-track for one or more goals. For example, enabling a "Max Points" target as `delta('points') >= 0` might alert you to saves in which your choices have reduced your accumulated points.
+- **Import**: A save-graph library is itself a Git repository with an app-defined branch and commit structure. The app has no "export" capability, but a library can be pushed to any Git remote repository. Basic understanding of Git is recommended in order to use this feature.
+
+---
+
+## ⚠️ Usage Notes
+
+- I recommend against sharing save-graph libraries created by this app (or any `.save` file) with others. [Ren'Py's security documentation](https://www.renpy.org/doc/html/security.html) warns that loading a file in the format used for Ren'Py saves can execute arbitrary code.
+
+### Export+Import
+
+To publish, from the library folder (its path is shown in the space configuration):
+
+  ```shell
+  git remote add origin <your-repo-url>
+  git push origin --all
+  git push origin 'refs/notes/*'   # notes and tags live here; --all does not include them
+  ```
+
+On the other machine, clone the repo and then use **Import…** on the Game Spaces screen. It reads the library and asks for a folder per save location the library was set up to use. The import will overwrite any existing save files in those folders, but the import wizard will warn the user before that happens.
 
 ---
 

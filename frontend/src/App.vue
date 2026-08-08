@@ -27,8 +27,11 @@
             <select v-model="selectedSpaceId" @change="onSpaceSelected">
               <option v-for="s in spaces" :key="s.id" :value="s.id">{{ s.label || s.id }}</option>
             </select>
+          </div>
+          <div v-if="spaces.length" class="space-actions-row">
             <button v-if="selectedSpaceId" class="btn-duplicate" @click="duplicateSpace">Duplicate</button>
             <button class="btn-secondary" @click="startNewSpace">New…</button>
+            <button class="btn-import" @click="openImportModal">Import…</button>
           </div>
 
           <SpaceFormModal
@@ -220,6 +223,16 @@
       @confirm="confirmRemoveSpace"
     />
 
+    <ImportLibraryModal
+      :is-open="importModalOpen"
+      :form="importForm"
+      @close="importModalOpen = false"
+      @inspect="inspectLibrary"
+      @plan="planImport"
+      @import="importLibrary"
+      @open-picker="openPicker"
+    />
+
     <RestoreDirModal
       :is-open="restoreDirModal.open"
       :saves-dirs="restoreDirModal.savesDirs"
@@ -257,6 +270,7 @@ import SpaceFormModal from './components/modals/SpaceFormModal.vue';
 import OnboardingModal from './components/modals/OnboardingModal.vue';
 import AboutModal from './components/modals/AboutModal.vue';
 import DeleteNodeModal from './components/modals/DeleteNodeModal.vue';
+import ImportLibraryModal from './components/modals/ImportLibraryModal.vue';
 import PickerModal from './components/modals/PickerModal.vue';
 import RemoveSpaceModal from './components/modals/RemoveSpaceModal.vue';
 import RestoreDirModal from './components/modals/RestoreDirModal.vue';
@@ -271,6 +285,12 @@ const selectedSpaceId = ref('');
 const availableSlots = ref([]);
 const selectedSlot = ref('');
 const defaultDataDir = ref('');
+
+const importModalOpen = ref(false);
+const importForm = ref({
+  library_path: '', saves_dirs: [], label: '',
+  inspect: null, inspecting: false, saving: false, error: '',
+});
 
 const spaceForm = ref({
   isNew: false,
@@ -484,6 +504,103 @@ function startNewSpace() {
     saving: false,
     error: '',
   };
+}
+
+// -- importing a cloned library -------------------------------------------
+
+function openImportModal() {
+  importForm.value = {
+    step: 1, library_path: '', saves_dirs: [], label: '',
+    inspect: null, inspecting: false,
+    plan: [], planning: false, approved: false,
+    saving: false, error: '',
+  };
+  importModalOpen.value = true;
+}
+
+// Step 2 shows what import would write over, so ask before anything is touched.
+async function planImport() {
+  const form = importForm.value;
+  form.step = 2;
+  form.planning = true;
+  form.error = '';
+  form.approved = false;
+  try {
+    const resp = await fetch('/api/library/plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        library_path: form.library_path,
+        saves_dirs: form.saves_dirs.filter(Boolean),
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      form.error = data.detail || 'Could not read the library.';
+      return;
+    }
+    form.plan = data.slots || [];
+  } catch (e) {
+    form.error = String(e);
+  } finally {
+    form.planning = false;
+  }
+}
+
+async function inspectLibrary() {
+  const form = importForm.value;
+  form.inspect = null;
+  if (!form.library_path) return;
+  form.inspecting = true;
+  try {
+    const resp = await fetch(`/api/library/inspect?path=${encodeURIComponent(form.library_path)}`);
+    form.inspect = await resp.json();
+    if (form.inspect.ok && !form.label) {
+      form.label = form.inspect.space?.label || '';
+    }
+  } catch (e) {
+    form.inspect = { ok: false, error: String(e) };
+  } finally {
+    form.inspecting = false;
+  }
+}
+
+async function importLibrary() {
+  const form = importForm.value;
+  form.saving = true;
+  form.error = '';
+  try {
+    const resp = await fetch('/api/spaces/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        library_path: form.library_path,
+        saves_dirs: form.saves_dirs.filter(Boolean),
+        label: form.label,
+        overwrite: form.approved,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      const detail = data.detail;
+      if (detail?.error === 'WOULD_OVERWRITE') {
+        form.error = `Approve overwriting ${detail.slots.join(', ')} to continue.`;
+      } else if (typeof detail === 'string') {
+        form.error = detail;
+      } else {
+        form.error = 'Import failed.';
+      }
+      return;
+    }
+    await loadConfig();
+    importModalOpen.value = false;
+    selectedSpaceId.value = data.id;
+    await onSpaceSelected();
+  } catch (e) {
+    form.error = String(e);
+  } finally {
+    form.saving = false;
+  }
 }
 
 function duplicateSpace() {
@@ -1067,9 +1184,16 @@ async function fetchFolderNode(path) {
 
 async function openPicker(target = 'saves_dir') {
   picker.value.target = target;
-  let current = target === 'additional_saves_dir'
-    ? spaceForm.value.saves_dir
-    : spaceForm.value[target];
+  let current;
+  if (target === 'import_library') {
+    current = importForm.value.library_path;
+  } else if (target.startsWith('import_saves_dir:')) {
+    current = importForm.value.saves_dirs[Number(target.split(':')[1])];
+  } else if (target === 'additional_saves_dir') {
+    current = spaceForm.value.saves_dir;
+  } else {
+    current = spaceForm.value[target];
+  }
   picker.value.open = true;
   picker.value.selected = current || null;
   picker.value.nodes = [];
@@ -1135,6 +1259,18 @@ function pickerSelect(path) {
 }
 
 function selectFolder(path) {
+  // Import modal targets: the library folder, or one save location by index.
+  if (picker.value.target === 'import_library') {
+    importForm.value.library_path = path;
+    picker.value.open = false;
+    inspectLibrary();
+    return;
+  }
+  if (picker.value.target.startsWith('import_saves_dir:')) {
+    importForm.value.saves_dirs[Number(picker.value.target.split(':')[1])] = path;
+    picker.value.open = false;
+    return;
+  }
   if (picker.value.target === 'additional_saves_dir') {
     if (!spaceForm.value.additional_saves_dirs) spaceForm.value.additional_saves_dirs = [];
     if (path && !spaceForm.value.additional_saves_dirs.includes(path)) {
