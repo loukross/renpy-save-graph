@@ -17,16 +17,16 @@ from dataclasses import asdict
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, Body, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
-from .config import AppConfig, GameSpace, default_config_path, default_library_path
+from .config import APP_NAME, AppConfig, GameSpace, default_config_path, default_library_path
 from .db import DatabaseStore
-from .library import Library, STATE
+from .library import GitError, Library, STATE
 from .thumbnail import stamp_png
-from .watcher import Director, SpaceConfig
+from .watcher import Director, SaveDirRequiredError, SpaceConfig
 
 _HTML_PATH = Path(__file__).parent / "static" / "index.html"
 _ASSETS_DIR = Path(__file__).parent / "static" / "assets"
@@ -96,11 +96,27 @@ def create_app(config_path: Path) -> FastAPI:
             additional_saves_dirs=[Path(d) for d in space.additional_saves_dirs if d],
         ))
 
+    # Spaces whose manifest this process has already backfilled.
+    published_manifests: set[str] = set()
+
+    def backfill_manifest(space: GameSpace, background: BackgroundTasks) -> None:
+        """Queue a manifest write for a library that may predate the manifest.
+
+        Import demands the marker, so old libraries need one written eventually.
+        After the response, and once per space per run: it must not sit in front
+        of a graph load, and rewriting it on every one would be a subprocess for
+        nothing.
+        """
+        if space.id in published_manifests:
+            return
+        published_manifests.add(space.id)
+        background.add_task(publish_manifest, space)
+
     def publish_manifest(space: GameSpace) -> None:
         """Mirror the space's portable settings into its library."""
         try:
             make_library(space).write_manifest(
-                {"schema": 1, "space": {k: getattr(space, k) for k in _MANIFEST_KEYS}}
+                {"space": {k: getattr(space, k) for k in _MANIFEST_KEYS}}
             )
         except Exception:
             # Config lives in config.json regardless; a library that can't be
@@ -174,6 +190,167 @@ def create_app(config_path: Path) -> FastAPI:
         save(cfg)
         return asdict(space)
 
+    def open_cloned_library(path: Path) -> Library:
+        """Make a cloned library usable: local branches, and its notes fetched.
+
+        `Library(path)` rather than `Library.init(path)`, which would create a
+        repo: a mistyped or wrongly picked folder has to be reported as invalid,
+        not turned into one.  Both steps are idempotent, so inspecting before
+        importing costs nothing that the import would not do anyway.
+        """
+        lib = Library(path)
+        lib.adopt_remote_branches()
+        lib.fetch_notes()
+        return lib
+
+    def inspect_library(path: str) -> dict[str, Any]:
+        """Describe an existing library."""
+        p = Path(path).expanduser()
+        if not (p / ".git").is_dir():
+            return {"ok": False, "error": "Not a git repository."}
+        lib = open_cloned_library(p)
+        try:
+            lib.sha_of("_root")
+        except GitError:
+            return {"ok": False, "error": "Not a save graph library (no _root commit)."}
+        manifest = lib.read_manifest()
+        if manifest.get("app") != APP_NAME:
+            return {"ok": False, "error": (
+                f"No {APP_NAME} manifest. Open this library in the app that "
+                "created it once, so it can write one, then push again."
+            )}
+
+        counts: dict[int, int] = {}
+        for meta in lib.meta_all().values():
+            index = meta.get("save_dir_index")
+            if isinstance(index, int):
+                counts[index] = counts.get(index, 0) + 1
+        return {
+            "ok": True,
+            "slots": lib.slot_branches(),
+            # A library that recorded nothing still needs one dir to live in.
+            "save_dir_count": max(counts) + 1 if counts else 1,
+            "nodes_per_save_dir": counts,
+            "space": manifest.get("space", {}),
+        }
+
+    def plan_slots(director: Director, fallback_dir: str) -> list[dict[str, Any]]:
+        """Where each slot's save would land, and whether something is there.
+
+        Newest save point across every route, not the main line's tip: which
+        branch a player was last on is machine-local state that does not survive
+        a clone, so the most recent one anywhere is the closest thing to where
+        they left off.  Writes nothing -- the import wizard shows this before
+        anything is touched.
+        """
+        lib = director.library
+        tips = lib.branch_tips()
+        plan = []
+        for branch in lib.slot_branches():
+            nodes = lib.dag_for_slot(branch, [])
+            if not nodes:
+                continue
+            sha = max(nodes, key=lambda n: n.when).sha
+            try:
+                target = director.restore_path(branch, sha)
+            except SaveDirRequiredError:
+                target = Path(fallback_dir) / f"{branch}.save"
+            plan.append({
+                "slot": branch,
+                "sha": sha,
+                # Land on the branch when that node is its tip, so playing on
+                # continues the route instead of forking a duplicate of it.
+                "commitish": next((b for b in tips.get(sha, []) if b), sha),
+                "target": str(target),
+                "occupied": target.exists(),
+                "save_points": len(nodes),
+            })
+        return plan
+
+    def seed_slots(space: GameSpace) -> list[str]:
+        """Write each slot's newest save point into its folder.
+
+        Slots are discovered from `.save` files, so a library opened against an
+        empty saves folder shows nothing however many branches it has.  Any file
+        already in a slot is overwritten -- the wizard lists those up front and
+        the caller has to approve them.
+        """
+        director = make_director(space)
+        seeded = []
+        for entry in plan_slots(director, space.saves_dir):
+            director.switch_to(
+                entry["slot"], entry["commitish"],
+                target_save_dir=str(Path(entry["target"]).parent),
+            )
+            seeded.append(entry["slot"])
+        return seeded
+
+    def director_for(lib_path: Path, saves_dirs: list[str]) -> Director:
+        return Director(SpaceConfig(
+            saves_dir=Path(saves_dirs[0]),
+            library_path=lib_path,
+            additional_saves_dirs=[Path(d) for d in saves_dirs[1:] if d],
+        ))
+
+    @app.get("/api/library/inspect")
+    def api_inspect_library(path: str) -> dict[str, Any]:
+        return inspect_library(path)
+
+    @app.post("/api/library/plan")
+    def api_plan_import(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Dry run: what importing would write, and what it would overwrite."""
+        lib_path = Path(body.get("library_path", "")).expanduser()
+        saves_dirs = [d for d in body.get("saves_dirs", []) if d]
+        info = inspect_library(str(lib_path))
+        if not info["ok"]:
+            raise HTTPException(400, info["error"])
+        if not saves_dirs:
+            raise HTTPException(400, "At least one saves dir is required.")
+        return {"slots": plan_slots(director_for(lib_path, saves_dirs), saves_dirs[0])}
+
+    @app.post("/api/spaces/import")
+    def api_import_space(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        from dataclasses import asdict
+        lib_path = Path(body.get("library_path", "")).expanduser()
+        info = inspect_library(str(lib_path))
+        if not info["ok"]:
+            raise HTTPException(400, info["error"])
+        saves_dirs = [d for d in body.get("saves_dirs", []) if d]
+        if not saves_dirs:
+            raise HTTPException(400, "At least one saves dir is required.")
+
+        # The wizard shows these and makes the user tick a box. Re-check here so
+        # the API cannot overwrite someone's saves just because a caller skipped
+        # that screen.
+        occupied = [e["slot"] for e in plan_slots(director_for(lib_path, saves_dirs), saves_dirs[0])
+                    if e["occupied"]]
+        if occupied and not body.get("overwrite"):
+            raise HTTPException(409, {
+                "error": "WOULD_OVERWRITE",
+                "slots": occupied,
+            })
+
+        lib = Library(lib_path)
+        lib.fetch_notes()
+        settings = {
+            k: v for k, v in (lib.read_manifest().get("space") or {}).items()
+            if k in _MANIFEST_KEYS and k != "label"
+        }
+
+        cfg = load()
+        space_id = uuid.uuid4().hex[:8]
+        space = GameSpace(
+            id=space_id,
+            label=body.get("label") or info["space"].get("label") or lib_path.name,
+            saves_dir=saves_dirs[0],
+            additional_saves_dirs=saves_dirs[1:],
+            library_path=str(lib_path),
+            **settings,
+        )
+        cfg.spaces.append(space)
+        save(cfg)
+        return {**asdict(space), "seeded_slots": seed_slots(space)}
+
     @app.delete("/api/spaces/{space_id}")
     def api_delete_space(space_id: str, delete_library: bool = False) -> dict[str, bool]:
         cfg = load()
@@ -217,11 +394,13 @@ def create_app(config_path: Path) -> FastAPI:
     def api_graph(
         space_id: str,
         slot_name: str,
+        background: BackgroundTasks,
         base_sort: str = "chrono",
         base_dir: str = "asc",
         order_by: str = "",
     ) -> dict[str, Any]:
         space = get_space_or_404(space_id)
+        backfill_manifest(space, background)
         director = make_director(space)
         lib = director.library
         # Switch to the active branch (fork branch after restore+fork, else slot branch).
@@ -463,8 +642,6 @@ def create_app(config_path: Path) -> FastAPI:
     def api_restore(
         space_id: str, slot_name: str, body: dict[str, Any] = Body(...)
     ) -> dict[str, Any]:
-        from .library import GitError
-        from .watcher import SaveDirRequiredError
         director = make_director(get_space_or_404(space_id))
         sha = body["sha"]
         new_branch = body.get("branch_name", "").strip() or None
@@ -489,7 +666,6 @@ def create_app(config_path: Path) -> FastAPI:
     def api_delete_node(
         space_id: str, slot_name: str, sha: str, strategy: str = "reparent"
     ) -> dict[str, bool]:
-        from .library import GitError
         space = get_space_or_404(space_id)
         director = make_director(space)
         try:
