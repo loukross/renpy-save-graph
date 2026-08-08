@@ -17,6 +17,7 @@ All notable changes to this project are documented in this file.
 ### Documentation
 
 - Add usage note against sharing save-graph libraries (a7000af)
+- Link the licence relatively (6379bdc)
 
 ### Features
 
