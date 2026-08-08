@@ -1,5 +1,7 @@
 """Integration tests for Library Git DAG operations."""
 
+import subprocess
+
 import pytest
 from renpy_save_graph.library import Library
 from renpy_save_graph.watcher import Director
@@ -143,6 +145,36 @@ def test_tags_survive_reparent_delete(tmp_workspace):
 
     lib.remove_tag(tip, "boss-fight")
     assert tip not in lib.tags_all()
+
+
+@pytest.mark.integration
+def test_opening_a_clone_does_not_mint_a_second_root(tmp_workspace, tmp_path):
+    """Library.init on a clone must adopt origin/_root, not invent a new root.
+
+    `git clone` gives a local branch to HEAD alone, so _root arrives under
+    refs/remotes.  A second root would leave the cloned history hanging off a
+    commit no walk excludes, surfacing the real root as a stray node with no
+    state or screenshot.
+    """
+    space = tmp_workspace["space"]
+    slot_file = tmp_workspace["slot_file"]
+    director = Director(space)
+    slot_file.write_bytes(create_mock_save_zip({"money": 200}, "chapter_1"))
+    director.ingest("1-1-LT1")
+
+    cloned = tmp_path / "cloned_lib"
+    subprocess.run(
+        ["git", "clone", "--quiet", str(tmp_workspace["lib_dir"]), str(cloned)],
+        check=True,
+    )
+
+    lib = Library.init(cloned)  # as any entry point would open it
+
+    roots = [
+        line for line in lib._git("log", "--branches", "--format=%h %P", capture=True).splitlines()
+        if len(line.split()) == 1
+    ]
+    assert len(roots) == 1, f"expected one root commit, found {roots}"
 
 
 @pytest.mark.integration

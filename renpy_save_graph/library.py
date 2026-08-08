@@ -130,6 +130,16 @@ class Library:
             return  # already initialised
         except GitError:
             pass
+        # A clone keeps _root under refs/remotes until it is adopted.  Minting a
+        # second root here would leave the cloned history hanging off a commit
+        # nothing else descends from, and every walk excludes only the new one --
+        # so the real root shows up as a stray node with no state or screenshot.
+        for remote_root in self._remote_refs("refs/remotes/*/_root"):
+            try:
+                self._git("branch", "_root", remote_root)
+                return
+            except GitError:
+                continue
         self._git("symbolic-ref", "HEAD", "refs/heads/_root")
         self._git("commit", "--allow-empty", "-q", "-m", "root")
 
@@ -228,6 +238,14 @@ class Library:
         """All fork branches belonging to slot_branch (named slot_branch-...)."""
         prefix = f"{slot_branch}-"
         return [b for b in self._all_branches() if b.startswith(prefix)]
+
+    def _remote_refs(self, pattern: str = "refs/remotes") -> list[str]:
+        """Remote-tracking refs as `<remote>/<branch>`, minus the HEAD pointers."""
+        try:
+            raw = self._git("for-each-ref", "--format=%(refname:short)", pattern, capture=True)
+        except GitError:
+            return []
+        return [r for r in raw.splitlines() if r and r.partition("/")[2] not in ("", "HEAD")]
 
     def _all_branches(self) -> list[str]:
         try:
