@@ -90,3 +90,53 @@ def test_api_tags_endpoints(test_client: TestClient):
 
     get_resp2 = test_client.get(f"/api/spaces/{space_id}/slots/{slot}/tags")
     assert "boss-fight" not in get_resp2.json()["tags"].get(sha, [])
+
+
+@pytest.mark.api
+def test_graph_drops_a_deleted_node_immediately(test_client: TestClient, tmp_workspace):
+    """The next graph fetch after a delete must not still list the node.
+
+    The UI redraws from whatever this returns, so a stale node here would look
+    like the canvas failing to repaint.
+    """
+    slot_file = tmp_workspace["slot_file"]
+    space_id, slot = "test-space-id", "1-1-LT1"
+
+    shas = []
+    for money in (200, 300, 400):
+        slot_file.write_bytes(create_mock_save_zip({"money": money}, f"c{money}"))
+        test_client.post(f"/api/spaces/{space_id}/slots/{slot}/ingest")
+        shas.append(test_client.get(f"/api/spaces/{space_id}/slots/{slot}/graph").json()["head"])
+
+    doomed = shas[1]
+    resp = test_client.delete(
+        f"/api/spaces/{space_id}/slots/{slot}/nodes/{doomed}?strategy=reparent"
+    )
+    assert resp.status_code == 200
+
+    nodes = test_client.get(f"/api/spaces/{space_id}/slots/{slot}/graph").json()["nodes"]
+    assert doomed not in {n["sha"] for n in nodes}
+
+
+@pytest.mark.api
+def test_graph_drops_a_cascade_deleted_subtree_immediately(test_client: TestClient, tmp_workspace):
+    """"Delete all following" takes the node and its descendants with it."""
+    slot_file = tmp_workspace["slot_file"]
+    space_id, slot = "test-space-id", "1-1-LT1"
+
+    shas = []
+    for money in (200, 300, 400):
+        slot_file.write_bytes(create_mock_save_zip({"money": money}, f"c{money}"))
+        test_client.post(f"/api/spaces/{space_id}/slots/{slot}/ingest")
+        shas.append(test_client.get(f"/api/spaces/{space_id}/slots/{slot}/graph").json()["head"])
+
+    resp = test_client.delete(
+        f"/api/spaces/{space_id}/slots/{slot}/nodes/{shas[1]}?strategy=cascade"
+    )
+    assert resp.status_code == 200
+
+    remaining = {n["sha"] for n in
+                 test_client.get(f"/api/spaces/{space_id}/slots/{slot}/graph").json()["nodes"]}
+    assert shas[1] not in remaining, "cascade-deleted node still listed"
+    assert shas[2] not in remaining, "descendant of a cascade delete still listed"
+    assert shas[0] in remaining

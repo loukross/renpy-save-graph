@@ -148,6 +148,21 @@ def test_tags_survive_reparent_delete(tmp_workspace):
 
 
 @pytest.mark.integration
+def test_opening_a_library_survives_a_locked_config(tmp_workspace):
+    """Every request opens the library and the watch poll opens it on a timer,
+    so two can reach for .git/config.lock at once. Losing must not raise."""
+    lib_dir = tmp_workspace["lib_dir"]
+    Library.init(lib_dir)  # first open sets the config
+    lock = lib_dir / ".git" / "config.lock"
+    lock.write_text("")
+    try:
+        lib = Library.init(lib_dir)  # second open must not try to write it
+        assert lib.head().sha
+    finally:
+        lock.unlink()
+
+
+@pytest.mark.integration
 def test_opening_a_clone_does_not_mint_a_second_root(tmp_workspace, tmp_path):
     """Library.init on a clone must adopt origin/_root, not invent a new root.
 

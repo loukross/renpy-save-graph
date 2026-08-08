@@ -43,6 +43,10 @@ _REC = "\x1e"  # record separator (between commits)
 
 # Space-level metadata that isn't keyed by commit, so it has no place in a note.
 # Its own branch, holding one file, never merged into a slot's history.
+# Tells git to copy notes onto commits rewritten by a rebase, which is how a
+# reparenting delete keeps them.  Git has no default for it.
+_NOTES_REWRITE_REF = "refs/notes/*"
+
 MANIFEST_BRANCH = "_meta"
 MANIFEST = "manifest.json"
 MANIFEST_SCHEMA = 1
@@ -118,7 +122,19 @@ class Library:
         # has no default.  Without it, deleting a node with the reparent strategy
         # rebases every descendant and silently drops their notes.  Set outside
         # the init branch above so libraries created before this also get it.
-        lib._git("config", "notes.rewriteRef", "refs/notes/*")
+        try:
+            already = lib._git("config", "--get", "notes.rewriteRef", capture=True)
+        except GitError:
+            already = ""
+        if already != _NOTES_REWRITE_REF:
+            try:
+                lib._git("config", "notes.rewriteRef", _NOTES_REWRITE_REF)
+            except GitError:
+                # Every request opens the library, and the watch poll opens it
+                # on a timer, so two can reach for .git/config.lock at once.
+                # Losing that race must not fail the request -- reading the
+                # config takes no lock, so the next opener sets it.
+                pass
         lib._init_root()
         return lib
 
