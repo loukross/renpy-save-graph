@@ -1189,6 +1189,9 @@ async function openPicker(target = 'saves_dir') {
     current = importForm.value.library_path;
   } else if (target.startsWith('import_saves_dir:')) {
     current = importForm.value.saves_dirs[Number(target.split(':')[1])];
+  } else if (target.startsWith('additional_saves_dir:')) {
+    // Changing one that exists: start the browser where it currently points.
+    current = spaceForm.value.additional_saves_dirs[Number(target.split(':')[1])];
   } else if (target === 'additional_saves_dir') {
     current = spaceForm.value.saves_dir;
   } else {
@@ -1268,6 +1271,13 @@ function selectFolder(path) {
   }
   if (picker.value.target.startsWith('import_saves_dir:')) {
     importForm.value.saves_dirs[Number(picker.value.target.split(':')[1])] = path;
+    picker.value.open = false;
+    return;
+  }
+  if (picker.value.target.startsWith('additional_saves_dir:')) {
+    const idx = Number(picker.value.target.split(':')[1]);
+    const dirs = spaceForm.value.additional_saves_dirs || [];
+    if (path && !dirs.some((d, i) => d === path && i !== idx)) dirs[idx] = path;
     picker.value.open = false;
     return;
   }
