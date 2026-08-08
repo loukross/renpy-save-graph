@@ -13,6 +13,7 @@ All notable changes to this project are documented in this file.
 - Keep the viewport where the user left it (745f7ef)
 - Keep per-node metadata across rebases and clones (3eb151a)
 - Adopt a clone's root instead of minting a second one (b07a701)
+- Stop racing for the git config lock on every open (58255c6)
 
 ### Documentation
 
