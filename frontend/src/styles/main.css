@@ -97,8 +97,9 @@ nav button:disabled { opacity: .35; cursor: default; }
   font-size: 13px; font-weight: 600; color: var(--text-dim);
   text-transform: uppercase; letter-spacing: .06em; margin-bottom: 14px;
 }
-.space-picker-row { display: flex; gap: 8px; align-items: center; margin-bottom: 20px; }
+.space-picker-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .space-picker-row select { flex: 1; }
+.space-actions-row { display: flex; gap: 8px; align-items: center; margin-bottom: 20px; }
 .section-divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
 
 .empty { color: var(--text-dim); padding: 8px 0; }
@@ -155,6 +156,8 @@ button:disabled { opacity: .4; cursor: default; }
 .btn-secondary:hover:not(:disabled) { border-color: var(--accent); }
 .btn-duplicate { background: var(--bg3); border: 1px solid var(--border); color: var(--purple); }
 .btn-duplicate:hover:not(:disabled) { border-color: var(--purple); }
+.btn-import { background: var(--bg3); border: 1px solid var(--border); color: var(--gold); }
+.btn-import:hover:not(:disabled) { border-color: var(--gold); }
 .btn-danger { background: var(--bg3); border: 1px solid var(--border); color: var(--red-val); }
 .btn-danger:hover:not(:disabled) { background: #1e0a0a; border-color: var(--red); }
 
@@ -292,6 +295,9 @@ table.diff-table td.new { color: var(--green); }
   display: flex; align-items: center; justify-content: center;
   z-index: 100;
 }
+/* The folder picker is always opened from another surface, so it sits above
+   every other modal rather than wherever template order happens to put it. */
+.picker-overlay { z-index: 110; }
 .modal {
   background: var(--bg2);
   border: 1px solid var(--border);

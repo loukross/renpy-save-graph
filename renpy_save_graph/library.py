@@ -25,6 +25,7 @@ from typing import Any
 
 
 from . import extractor
+from .config import APP_NAME
 from .thumbnail import optimize_save_thumbnail, restamp_save
 
 BLOB = "save.save"
@@ -44,6 +45,7 @@ _REC = "\x1e"  # record separator (between commits)
 # Its own branch, holding one file, never merged into a slot's history.
 MANIFEST_BRANCH = "_meta"
 MANIFEST = "manifest.json"
+MANIFEST_SCHEMA = 1
 
 # Branch identifiers that are never shown as user-visible names.
 _UNNAMED_BRANCHES = {"master", "main", "_root", MANIFEST_BRANCH, "(detached)", ""}
@@ -239,6 +241,23 @@ class Library:
         prefix = f"{slot_branch}-"
         return [b for b in self._all_branches() if b.startswith(prefix)]
 
+    def sha_of(self, rev: str) -> str:
+        return self._git("rev-parse", rev, capture=True)
+
+    def slot_branches(self) -> list[str]:
+        """The branches that name a slot, as opposed to a route forked off one.
+
+        A fork is named `<slot>-<something>`, so a branch with a prefix-parent
+        among the others is a route.  A game whose own slot names nest that way
+        (`1-1-LT1` and `1-1-LT1-2`) is indistinguishable here -- the same
+        ambiguity `fork_branches_of` already lives with.
+        """
+        named = [b for b in self._all_branches() if b not in _UNNAMED_BRANCHES]
+        return sorted(
+            b for b in named
+            if not any(b.startswith(f"{other}-") for other in named if other != b)
+        )
+
     def _remote_refs(self, pattern: str = "refs/remotes") -> list[str]:
         """Remote-tracking refs as `<remote>/<branch>`, minus the HEAD pointers."""
         try:
@@ -246,6 +265,37 @@ class Library:
         except GitError:
             return []
         return [r for r in raw.splitlines() if r and r.partition("/")[2] not in ("", "HEAD")]
+
+    def adopt_remote_branches(self) -> list[str]:
+        """Give a clone's remote-tracking refs local branches of the same name.
+
+        `git clone` checks out one branch and leaves the rest -- `_root` and
+        every route included -- under refs/remotes.  Everything here walks local
+        branches, so a freshly cloned library reads as almost empty until this
+        runs.  A no-op on a library with no remote.
+        """
+        local = set(self._all_branches())
+        adopted = []
+        for remote_ref in self._remote_refs():
+            name = remote_ref.partition("/")[2]
+            if name in local:
+                continue
+            try:
+                self._git("branch", name, remote_ref)
+                adopted.append(name)
+            except GitError:
+                continue
+        return adopted
+
+    def fetch_notes(self) -> None:
+        """Pull note refs from the remote, which `git clone` skips by default."""
+        try:
+            remotes = self._git("remote", capture=True).splitlines()
+            if not remotes:
+                return
+            self._git("fetch", "--quiet", remotes[0], "+refs/notes/*:refs/notes/*")
+        except GitError:
+            pass  # offline, or the remote has no notes; the graph still opens
 
     def _all_branches(self) -> list[str]:
         try:
@@ -390,7 +440,12 @@ class Library:
             return {}
 
     def write_manifest(self, data: dict[str, Any]) -> None:
-        """Commit `data` to the manifest branch.
+        """Stamp `data` as this app's and commit it to the manifest branch.
+
+        The app/schema keys are added here rather than by callers so every
+        library carries the same marker, which is what import validates
+        against.  Identical content is skipped, so republishing on startup
+        doesn't pile up commits.
 
         Builds the commit out of git objects directly instead of checking the
         branch out: the working tree holds the save point currently materialized
@@ -399,8 +454,11 @@ class Library:
         landing in the same window would commit a save point onto _meta.  This
         way touches no index, no working tree, and no HEAD.
         """
+        payload = {"app": APP_NAME, "schema": MANIFEST_SCHEMA, **data}
+        if payload == self.read_manifest():
+            return
         blob = self._git("hash-object", "-w", "--stdin", capture=True,
-                         stdin=json.dumps(data, indent=2, sort_keys=True))
+                         stdin=json.dumps(payload, indent=2, sort_keys=True))
         tree = self._git("mktree", capture=True, stdin=f"100644 blob {blob}\t{MANIFEST}\n")
         parent: list[str] = []
         try:

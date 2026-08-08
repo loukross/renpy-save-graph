@@ -1,5 +1,5 @@
 <template>
-  <div v-if="isOpen" class="modal-overlay" @click.self="$emit('close')">
+  <div v-if="isOpen" class="modal-overlay picker-overlay" @click.self="$emit('close')">
     <div class="modal">
       <div class="modal-header">
         <span>Select folder</span>
