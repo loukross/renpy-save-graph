@@ -11,6 +11,8 @@ All notable changes to this project are documented in this file.
 - Use a PAT for the changelog PR to avoid required workflow approval (ad0b8c6)
 - Build frontend before running tests; add Route Targets help & tour step (dc6b063)
 - Keep the viewport where the user left it (745f7ef)
+- Keep per-node metadata across rebases and clones (b8308bd)
+- Adopt a clone's root instead of minting a second one (3f1965d)
 
 ### Documentation
 
@@ -26,6 +28,8 @@ All notable changes to this project are documented in this file.
 - Add Duplicate space button, inline config fields, jump to latest save, and auto-fit graph viewport (76dce60)
 - Watch additional saves directories (9b0bae4)
 - Add "Hide removed" toggle to the variable diff (2bd599e)
+- Make a library carry its own tags and settings (6ea0af2)
+- Import a cloned library (07ae68d)
 
 ### Miscellaneous
 
