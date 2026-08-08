@@ -11,13 +11,13 @@ All notable changes to this project are documented in this file.
 - Use a PAT for the changelog PR to avoid required workflow approval (ad0b8c6)
 - Build frontend before running tests; add Route Targets help & tour step (dc6b063)
 - Keep the viewport where the user left it (745f7ef)
-- Keep per-node metadata across rebases and clones (9a569bc)
-- Adopt a clone's root instead of minting a second one (0b59104)
+- Keep per-node metadata across rebases and clones (3eb151a)
+- Adopt a clone's root instead of minting a second one (b07a701)
 
 ### Documentation
 
 - Add usage note against sharing save-graph libraries (a7000af)
-- Link the licence relatively (6379bdc)
+- Link the licence relatively (bd8577c)
 
 ### Features
 
@@ -29,8 +29,8 @@ All notable changes to this project are documented in this file.
 - Add Duplicate space button, inline config fields, jump to latest save, and auto-fit graph viewport (76dce60)
 - Watch additional saves directories (9b0bae4)
 - Add "Hide removed" toggle to the variable diff (2bd599e)
-- Make a library carry its own tags and settings (feda641)
-- Import a cloned library (520ec61)
+- Make a library carry its own tags and settings (d2d8b24)
+- Import a cloned library (a4a8664)
 
 ### Miscellaneous
 
@@ -54,7 +54,7 @@ All notable changes to this project are documented in this file.
 
 ### Performance
 
-- Stop redrawing the whole graph, and store save dirs locally (f10561d)
+- Stop redrawing the whole graph, and store save dirs locally (ba6b1c0)
 
 ### Refactor
 
