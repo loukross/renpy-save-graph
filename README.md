@@ -132,4 +132,4 @@ ln -sf ../../scripts/commit-msg .git/hooks/commit-msg
 
 ## 📄 License
 
-Distributed under the **MIT License**. See [`LICENSE`](file:///home/luc/github/lucjross/renpy-save-graph/LICENSE) for details.
+Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for details.
