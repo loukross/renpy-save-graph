@@ -14,6 +14,7 @@ All notable changes to this project are documented in this file.
 - Keep per-node metadata across rebases and clones (3eb151a)
 - Adopt a clone's root instead of minting a second one (b07a701)
 - Stop racing for the git config lock on every open (58255c6)
+- Milestone columns, restore/ingest race, view prefs, loading state (6f38ffb)
 
 ### Documentation
 
@@ -32,6 +33,7 @@ All notable changes to this project are documented in this file.
 - Add "Hide removed" toggle to the variable diff (2bd599e)
 - Make a library carry its own tags and settings (d2d8b24)
 - Import a cloned library (a4a8664)
+- Change an additional saves directory in place (40008d6)
 
 ### Miscellaneous
 
