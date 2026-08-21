@@ -278,6 +278,7 @@ import RestoreDirModal from './components/modals/RestoreDirModal.vue';
 import { useTags } from './composables/useTags.js';
 import { useAlignments } from './composables/useAlignments.js';
 import { useGraphData } from './composables/useGraphData.js';
+import { useViewPrefs } from './composables/useViewPrefs.js';
 
 const view = ref('spaces');
 const spaces = ref([]);
@@ -381,6 +382,17 @@ const {
   loadAllStates,
   selectNode,
 } = useGraphData();
+
+const { restore: restoreViewPrefs } = useViewPrefs(selectedSpaceId, {
+  selectedAlignments,
+  showMilestoneGuides,
+  graphBaseSort,
+  graphBaseDir,
+  graphOrderByExpr,
+  filterExpr,
+  filterActive,
+  appliedFilterExpr,
+});
 
 const currentSpace = computed(() => spaces.value.find(s => s.id === selectedSpaceId.value));
 const hasMultipleSavesDirs = computed(() => {
@@ -730,6 +742,9 @@ async function loadSlots() {
 async function openGraph(spaceId) {
   if (!spaceId) return;
   selectedSpaceId.value = spaceId;
+  // Before the first load: the graph and states fetches are parameterised by
+  // the sort and filter, so restoring after would need a second round trip.
+  restoreViewPrefs(spaceId);
   view.value = 'graph';
   // loadSlots picks a slot, whose watcher would reload the graph a second time.
   // Mute it and reload once here, so the watcher still starts after the load.
@@ -745,12 +760,12 @@ async function openGraph(spaceId) {
 
 async function reloadGraph() {
   if (!selectedSpaceId.value || !selectedSlot.value) return;
-  try {
-    await fetch(`/api/spaces/${selectedSpaceId.value}/ingest`, { method: 'POST' });
-  } catch (e) {}
-  await loadSlots();
   graphLoading.value = true;
   try {
+    try {
+      await fetch(`/api/spaces/${selectedSpaceId.value}/ingest`, { method: 'POST' });
+    } catch (e) {}
+    await loadSlots();
     const [bundle, tags] = await Promise.all([
       fetchGraphBundle(selectedSpaceId.value, selectedSlot.value, graphBaseSort.value, graphBaseDir.value, currentSpace.value, appliedFilterExpr.value, graphOrderByExpr.value),
       fetchTags(selectedSpaceId.value, selectedSlot.value),
@@ -877,7 +892,6 @@ async function removeFromFilterHistory(idx) {
 
 async function onSelectNode(sha) {
   await selectNode(selectedSpaceId.value, selectedSlot.value, sha);
-  bottomPanelOpen.value = true;
 }
 
 // Auto-select brings a newly arrived save point into view. Clicking a node
@@ -1125,6 +1139,7 @@ async function saveNoteAndClose() {
   });
   const node = graphData.value && graphData.value.nodes.find(n => n.sha === sha);
   if (node) node.note = text;
+  graphCanvasRef.value && graphCanvasRef.value.updateNodeNote(sha, text);
   noteOverlay.value = { open: false, sha: null, x: 0, y: 0, scale: 1 };
 }
 

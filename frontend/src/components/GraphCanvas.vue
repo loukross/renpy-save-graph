@@ -11,7 +11,7 @@
     </button>
     <svg id="graph" ref="svgRef"></svg>
     <div
-      v-if="!graphData || !graphData.nodes || !graphData.nodes.length"
+      v-if="graphData && graphData.nodes && !graphData.nodes.length"
       style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:14px;pointer-events:none"
     >
       No saves yet
@@ -422,13 +422,22 @@ function renderGraph() {
       return a.key.localeCompare(b.key, undefined, { numeric: true, sensitivity: 'base' });
     });
 
+    // Longest run of saves that did NOT advance the milestone hanging below a
+    // node. They inherit that node's column block and just take parent+1, so
+    // the next milestone column has to clear them or they spill past its guide.
+    const keylessRunBelow = (sha) => Math.max(0, ...(childrenOf.get(sha) || [])
+      .filter(c => !shaKeyMap.has(c.sha))
+      .map(c => 1 + keylessRunBelow(c.sha)));
+
     const milestoneTargetDepths = new Map();
     let runningTargetDepth = 0;
+    let prevKeyRun = 0;
     keyInfo.forEach((info) => {
       const matchingShas = Array.from(shaKeyMap.entries()).filter(([, k]) => k === info.key).map(([s]) => s);
       const maxRawDepthOfKey = Math.max(1, ...matchingShas.map(sha => rawDepths.get(sha) || 1));
-      runningTargetDepth = Math.max(runningTargetDepth + 1, maxRawDepthOfKey);
+      runningTargetDepth = Math.max(runningTargetDepth + 1 + prevKeyRun, maxRawDepthOfKey);
       milestoneTargetDepths.set(info.key, runningTargetDepth);
+      prevKeyRun = Math.max(0, ...matchingShas.map(keylessRunBelow));
     });
 
     const buildPadded = (n, currentMilestoneDepth) => {
@@ -821,26 +830,15 @@ function decorateNode(el, n, meta) {
   });
 
   // Pencil / note
-  const hasNote = !!n.note;
-  const pencilColor = hasNote ? '#c8a020' : '#445566';
   const pencilG = nodeSel.append('g').attr('cursor', 'pointer').attr('class', 'node-pencil');
   pencilG.append('circle')
     .attr('cx', -nodeW / 2 - 2).attr('cy', nodeH / 2 + 6).attr('r', 13)
-    .style('fill', '#0f0f22').attr('stroke', pencilColor).attr('stroke-width', 1.5);
+    .style('fill', '#0f0f22').attr('stroke-width', 1.5);
   pencilG.append('text')
     .attr('x', -nodeW / 2 - 2).attr('y', nodeH / 2 + 11)
     .attr('text-anchor', 'middle').attr('font-size', '16')
-    .attr('fill', pencilColor).attr('pointer-events', 'none').text('✎');
-
-  if (hasNote) {
-    const nfo = nodeSel.append('foreignObject')
-      .attr('x', -nodeW / 2).attr('y', nodeH / 2 + 22)
-      .attr('width', nodeW).attr('height', 80);
-    nfo.append('xhtml:div')
-      .style('font-size', '14px').style('color', '#8a9ac0').style('line-height', '1.4')
-      .style('overflow', 'hidden').style('max-height', '80px').style('padding', '0 6px')
-      .style('word-break', 'break-word').style('white-space', 'pre-line').text(n.note);
-  }
+    .attr('pointer-events', 'none').text('✎');
+  drawNote(nodeSel, n.note);
 
   pencilG.on('click', function (event) {
     event.stopPropagation();
@@ -855,6 +853,31 @@ function decorateNode(el, n, meta) {
       text: n.note || '',
     });
   });
+}
+
+// Draws (or clears) a node's note text and tints its pencil. Uses the last
+// layout's box size, so an edited note keeps the slot the layout gave it and a
+// longer one can overlap a neighbour until the next full render.
+function drawNote(nodeSel, text) {
+  const { nodeW, nodeH } = layoutMeta;
+  const color = text ? '#c8a020' : '#445566';
+  nodeSel.select('g.node-pencil circle').attr('stroke', color);
+  nodeSel.select('g.node-pencil text').attr('fill', color);
+  nodeSel.select('foreignObject.node-note').remove();
+  if (!text) return;
+  nodeSel.append('foreignObject')
+    .attr('class', 'node-note')
+    .attr('x', -nodeW / 2).attr('y', nodeH / 2 + 22)
+    .attr('width', nodeW).attr('height', 80)
+    .append('xhtml:div')
+    .style('font-size', '14px').style('color', '#8a9ac0').style('line-height', '1.4')
+    .style('overflow', 'hidden').style('max-height', '80px').style('padding', '0 6px')
+    .style('word-break', 'break-word').style('white-space', 'pre-line').text(text);
+}
+
+function updateNodeNote(sha, text) {
+  if (!containerGroup) return;
+  drawNote(containerGroup.selectAll('g.node').filter(d => d.data.sha === sha), text);
 }
 
 // -- jump-to-node camera control (ported from centerGraphOnNode(s)) --------
@@ -959,7 +982,7 @@ function fitGraphToScreen() {
   updateMilestoneGuidesViewport();
 }
 
-defineExpose({ jumpToHead, jumpToRoot, jumpToLatest, jumpToDateRange, centerGraphOnNode, fitGraphToScreen });
+defineExpose({ jumpToHead, jumpToRoot, jumpToLatest, jumpToDateRange, centerGraphOnNode, fitGraphToScreen, updateNodeNote });
 </script>
 
 <style scoped>

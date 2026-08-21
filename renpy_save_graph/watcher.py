@@ -15,6 +15,7 @@ import hashlib
 import json
 import re
 import sys
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -24,6 +25,22 @@ from .thumbnail import restamp_save
 _SLOT_HASHES_FILE = ".slot_hashes.json"
 _SLOT_BRANCHES_FILE = ".slot_branches.json"
 _SLOT_SAVE_DIRS_FILE = ".slot_save_dirs.json"
+
+# Every write path here is "touch the save file, then record its hash", and the
+# hash file itself is a read-modify-write. The watcher polls ingest_all from a
+# thread pool every couple of seconds while request handlers restore and delete,
+# so without this a restore's freshly stamped file gets committed as a new save
+# before its hash lands — or the poll writes back a hashes dict it loaded before
+# the restore, losing the record entirely. A Director is rebuilt per request, so
+# the lock belongs to the library, not the instance.
+_LIB_LOCKS: dict[str, threading.RLock] = {}
+_LIB_LOCKS_GUARD = threading.Lock()
+
+
+def _library_lock(library_path: str | Path) -> threading.RLock:
+    key = str(Path(library_path).expanduser().resolve())
+    with _LIB_LOCKS_GUARD:
+        return _LIB_LOCKS.setdefault(key, threading.RLock())
 
 
 @dataclass
@@ -54,6 +71,7 @@ class Director:
         self._lib = Library.init(config.library_path)
         self._exclude_re = re.compile(config.slot_exclude) if config.slot_exclude else None
         self._dir_indexes: dict[str, int] | None = None
+        self._lock = _library_lock(config.library_path)
         self._migrate_save_dirs()
 
     @property
@@ -257,32 +275,33 @@ class Director:
 
     def ingest(self, slot_name: str, note: str | None = None) -> IngestResult | None:
         """Commit slot_name if it changed. Returns None if nothing new."""
-        hashes = self._load_hashes()
-        if not self._slot_changed(slot_name, hashes):
-            return None
-
-        sp = self.slot_path(slot_name)
-        # Auto-fork if sitting at a historical commit SHA from a restore
-        self._ensure_active_branch_for_ingest(slot_name)
-
-        try:
-            commit_info = self._lib.commit_savepoint(sp, note=note)
-        except GitError as exc:
-            if "nothing to commit" in str(exc):
-                self._record_hash(hashes, slot_name, sp)
-                self._save_hashes(hashes)
+        with self._lock:
+            hashes = self._load_hashes()
+            if not self._slot_changed(slot_name, hashes):
                 return None
-            raise
 
-        sp.write_bytes(restamp_save(sp.read_bytes(), commit_info.stamp_text()))
+            sp = self.slot_path(slot_name)
+            # Auto-fork if sitting at a historical commit SHA from a restore
+            self._ensure_active_branch_for_ingest(slot_name)
 
-        index = self._dir_index(sp.parent)
-        if index is not None:
-            self._record_save_dir(commit_info.sha, index)
+            try:
+                commit_info = self._lib.commit_savepoint(sp, note=note)
+            except GitError as exc:
+                if "nothing to commit" in str(exc):
+                    self._record_hash(hashes, slot_name, sp)
+                    self._save_hashes(hashes)
+                    return None
+                raise
 
-        self._record_hash(hashes, slot_name, sp)
-        self._save_hashes(hashes)
-        return IngestResult(slot_name=slot_name, commit=commit_info)
+            sp.write_bytes(restamp_save(sp.read_bytes(), commit_info.stamp_text()))
+
+            index = self._dir_index(sp.parent)
+            if index is not None:
+                self._record_save_dir(commit_info.sha, index)
+
+            self._record_hash(hashes, slot_name, sp)
+            self._save_hashes(hashes)
+            return IngestResult(slot_name=slot_name, commit=commit_info)
 
     def ingest_all(self, note: str | None = None) -> list[IngestResult]:
         """Ingest all changed slots. Returns results only for slots that committed.
@@ -392,63 +411,65 @@ class Director:
         target_save_dir: str | Path | None = None,
     ) -> CommitInfo:
         """Materialize a commit into a slot file."""
-        if new_branch is not None:
-            self._lib.ensure_branch(self._active_branch(slot_name))
-            info = self._lib.branch_from(commitish, new_branch)
-            target_branch = new_branch
-        else:
-            try:
-                self._lib._git("rev-parse", "--verify", f"refs/heads/{commitish}", capture=True)
-                info = self._lib.checkout(commitish)
-                target_branch = commitish
-            except GitError:
-                info = self._lib.checkout(commitish)
-                target_branch = commitish
+        with self._lock:
+            if new_branch is not None:
+                self._lib.ensure_branch(self._active_branch(slot_name))
+                info = self._lib.branch_from(commitish, new_branch)
+                target_branch = new_branch
+            else:
+                try:
+                    self._lib._git("rev-parse", "--verify", f"refs/heads/{commitish}", capture=True)
+                    info = self._lib.checkout(commitish)
+                    target_branch = commitish
+                except GitError:
+                    info = self._lib.checkout(commitish)
+                    target_branch = commitish
 
-        if info.branch in ("(detached)", ""):
-            info = CommitInfo(sha=info.sha, short=info.short, branch=slot_name, subject=info.subject, when=info.when)
+            if info.branch in ("(detached)", ""):
+                info = CommitInfo(sha=info.sha, short=info.short, branch=slot_name, subject=info.subject, when=info.when)
 
-        stamp_name = target_branch if target_branch and len(target_branch) < 40 else slot_name
-        sp = self.restore_path(slot_name, info.sha, target_save_dir=target_save_dir)
-        self._lib.materialize(sp, stamp=True, stamp_name=stamp_name)
-        hashes = self._load_hashes()
-        self._record_hash(hashes, slot_name, sp)
-        self._save_hashes(hashes)
+            stamp_name = target_branch if target_branch and len(target_branch) < 40 else slot_name
+            sp = self.restore_path(slot_name, info.sha, target_save_dir=target_save_dir)
+            self._lib.materialize(sp, stamp=True, stamp_name=stamp_name)
+            hashes = self._load_hashes()
+            self._record_hash(hashes, slot_name, sp)
+            self._save_hashes(hashes)
 
-        branches = self._load_branches()
-        branches[slot_name] = target_branch
-        self._save_branches(branches)
-        return info
+            branches = self._load_branches()
+            branches[slot_name] = target_branch
+            self._save_branches(branches)
+            return info
 
     def delete_node(self, slot_name: str, sha: str, strategy: str = "reparent") -> set[str]:
         """Delete node `sha` using `strategy` ('reparent' or 'cascade').
 
         Returns the set of old commit SHAs that no longer exist in git history.
         """
-        try:
-            head_sha = self._lib.head().sha
-        except GitError:
-            head_sha = None
-        if sha == head_sha:
-            raise GitError("Cannot delete the current active save point")
+        with self._lock:
+            try:
+                head_sha = self._lib.head().sha
+            except GitError:
+                head_sha = None
+            if sha == head_sha:
+                raise GitError("Cannot delete the current active save point")
 
-        if strategy == "cascade":
-            removed = self._lib.delete_node_cascade(sha)
-        else:
-            removed = self._lib.delete_node_reparent(sha)
-        self._dir_indexes = None  # reparenting rewrote the shas we cached
+            if strategy == "cascade":
+                removed = self._lib.delete_node_cascade(sha)
+            else:
+                removed = self._lib.delete_node_reparent(sha)
+            self._dir_indexes = None  # reparenting rewrote the shas we cached
 
-        active = self._active_branch(slot_name)
-        try:
-            self._lib.ensure_branch(active)
-            sp = self.restore_path(slot_name, active)
-            self._lib.materialize(sp, stamp=True, stamp_name=active)
-            hashes = self._load_hashes()
-            self._record_hash(hashes, slot_name, sp)
-            self._save_hashes(hashes)
-        except Exception:
-            pass
-        return removed
+            active = self._active_branch(slot_name)
+            try:
+                self._lib.ensure_branch(active)
+                sp = self.restore_path(slot_name, active)
+                self._lib.materialize(sp, stamp=True, stamp_name=active)
+                hashes = self._load_hashes()
+                self._record_hash(hashes, slot_name, sp)
+                self._save_hashes(hashes)
+            except Exception:
+                pass
+            return removed
 
 
 # -- CLI --------------------------------------------------------------------

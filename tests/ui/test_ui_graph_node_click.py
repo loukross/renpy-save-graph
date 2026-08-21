@@ -9,6 +9,7 @@ this slipped through the test suite undetected.
 """
 
 import pytest
+from playwright.sync_api import expect
 
 
 @pytest.mark.ui
@@ -102,5 +103,10 @@ def test_ui_graph_node_click_selects_node(page, ui_server_url):
 
     page.click("g.node.head")
     page.wait_for_selector("#diff-title >> text=child1")
+
+    # Selecting a node must not pop the Inspector open on its own.
+    expect(page.locator("#bottom-content")).to_be_hidden()
+    page.click("#bottom-pulltab .bp-toggle")
+    expect(page.locator("#bottom-content")).to_be_visible()
 
     assert page_errors == [], f"unexpected page errors: {page_errors}"

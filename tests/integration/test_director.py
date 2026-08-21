@@ -315,3 +315,48 @@ def test_save_dir_survives_reparent_delete(dirs):
     assert tip != last, "descendant should have been rewritten"
     assert director.node_save_dir("1-1-LT1", tip) == str(ep9)
 
+
+
+@pytest.mark.integration
+def test_restore_is_not_re_ingested_by_a_concurrent_poll(dirs):
+    """A restore must not race the watcher into committing its own output.
+
+    Restoring stamps the branch name onto the save's screenshot, so the file it
+    writes is always byte-different from the stored blob. The watcher polls
+    ingest_all from a thread pool every couple of seconds; if it can observe the
+    stamped file before the restore records its hash, it commits an identical
+    save as a brand new node.
+    """
+    import threading
+
+    lib, ep1, _ = dirs
+    slot = ep1 / "1-1-LT1.save"
+    slot.write_bytes(create_mock_save_zip({"money": 100}, "one"))
+    director = Director(SpaceConfig(saves_dir=ep1, library_path=lib))
+    assert len(director.ingest_all()) == 1
+    slot.write_bytes(create_mock_save_zip({"money": 200}, "two"))
+    assert len(director.ingest_all()) == 1
+
+    target = director.library.head().sha
+    before = set(director.library.all_shas()) if hasattr(director.library, "all_shas") else None
+
+    stop = threading.Event()
+    stray: list = []
+
+    def poll():
+        # The watcher builds a fresh Director per tick, exactly like the server.
+        poller = Director(SpaceConfig(saves_dir=ep1, library_path=lib))
+        while not stop.is_set():
+            stray.extend(poller.ingest_all())
+
+    t = threading.Thread(target=poll, daemon=True)
+    t.start()
+    try:
+        for _ in range(25):
+            director.switch_to("1-1-LT1", target)
+    finally:
+        stop.set()
+        t.join(timeout=10)
+
+    assert stray == [], f"restore was re-ingested as {[r.commit.short for r in stray]}"
+    assert before is None or set(director.library.all_shas()) == before
