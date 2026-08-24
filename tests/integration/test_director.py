@@ -360,3 +360,38 @@ def test_restore_is_not_re_ingested_by_a_concurrent_poll(dirs):
 
     assert stray == [], f"restore was re-ingested as {[r.commit.short for r in stray]}"
     assert before is None or set(director.library.all_shas()) == before
+
+
+@pytest.mark.integration
+def test_a_pass_does_not_restat_every_file_per_slot(dirs):
+    """One pass must not cost work proportional to slots x files.
+
+    _slot_files is called once per slot, so listing with iterdir + is_file cost
+    a stat per file per slot. On a network or /mnt drive that was seconds, and
+    it dominated both the watcher poll and every graph reload.
+    """
+    import os
+
+    lib, ep1, ep9 = dirs
+    for i in range(1, 13):
+        (ep1 / f"1-{i}-LT1.save").write_bytes(create_mock_save_zip({"money": i}, f"s{i}"))
+        (ep9 / f"1-{i}-LT1.save").write_bytes(create_mock_save_zip({"money": i}, f"s{i}"))
+    director = make_director(lib, ep1, ep9)
+    director.ingest_all()
+
+    real_stat = os.stat
+    calls = []
+
+    def counting_stat(path, *a, **kw):
+        calls.append(path)
+        return real_stat(path, *a, **kw)
+
+    os.stat = counting_stat
+    try:
+        assert director.ingest_all() == []
+    finally:
+        os.stat = real_stat
+
+    saves = [c for c in calls if str(c).endswith(".save")]
+    # 24 files x 12 slots would be ~288 before; a couple per slot is fine.
+    assert len(saves) < 100, f"{len(saves)} stat calls on save files in one clean pass"

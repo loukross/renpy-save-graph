@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sys
 import threading
@@ -71,6 +72,7 @@ class Director:
         self._lib = Library.init(config.library_path)
         self._exclude_re = re.compile(config.slot_exclude) if config.slot_exclude else None
         self._dir_indexes: dict[str, int] | None = None
+        self._saves_dirs: list[Path] | None = None
         self._lock = _library_lock(config.library_path)
         self._migrate_save_dirs()
 
@@ -80,30 +82,48 @@ class Director:
 
     @property
     def all_saves_dirs(self) -> list[Path]:
-        """Primary saves dir first, then the additional ones, deduplicated."""
-        dirs: list[Path] = []
-        seen: set[Path] = set()
-        for d in [self.config.saves_dir, *self.config.additional_saves_dirs]:
-            p = Path(d).expanduser()
-            key = p.resolve()
-            if key not in seen:
-                seen.add(key)
-                dirs.append(p)
-        return dirs
+        """Primary saves dir first, then the additional ones, deduplicated.
+
+        Cached per Director (one per request or poll tick): resolve() is a
+        per-component lstat, and this is read from every hot path below.
+        """
+        if self._saves_dirs is None:
+            dirs: list[Path] = []
+            seen: set[Path] = set()
+            for d in [self.config.saves_dir, *self.config.additional_saves_dirs]:
+                p = Path(d).expanduser()
+                key = p.resolve()
+                if key not in seen:
+                    seen.add(key)
+                    dirs.append(p)
+            self._saves_dirs = dirs
+        return self._saves_dirs
 
     # -- slot discovery ------------------------------------------------------
 
     def _slot_files(self, slot_name: str | None = None) -> list[Path]:
-        """Every ``.save`` file across the watched dirs, optionally for one slot."""
-        files = []
+        """Every ``.save`` file across the watched dirs, optionally for one slot.
+
+        scandir rather than iterdir + is_file: the directory read already knows
+        which entries are files, so this costs one syscall per directory instead
+        of a stat per entry.  A pass calls this once per slot, and on a network
+        or /mnt drive those stats dominated the whole pass.
+        """
+        files: list[Path] = []
         for d in self.all_saves_dirs:
-            if not d.is_dir():
-                continue
-            for f in sorted(d.iterdir()):
-                if not f.is_file() or not f.name.lower().endswith(".save"):
-                    continue
-                if slot_name is None or f.stem == slot_name:
-                    files.append(f)
+            try:
+                with os.scandir(d) as entries:
+                    found = [
+                        Path(e.path) for e in entries
+                        if e.name.lower().endswith(".save")
+                        and (slot_name is None or Path(e.name).stem == slot_name)
+                        and e.is_file()
+                    ]
+            except OSError:
+                continue  # unmounted drive or deleted folder
+            # Sorted within each dir, dirs left in all_saves_dirs order: primary
+            # first, which is the tie-break slot_path relies on.
+            files.extend(sorted(found))
         return files
 
     def slot_names(self) -> list[str]:

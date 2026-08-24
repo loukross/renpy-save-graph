@@ -119,8 +119,8 @@
             @update:hideOffTrack="hideOffTrack = $event"
             @toggle-popover="showAlignmentPopover = !showAlignmentPopover"
             @close-popover="showAlignmentPopover = false"
-            @toggle-alignment="toggleAlignment($event, reloadGraph)"
-            @clear-alignments="clearAlignments(reloadGraph)"
+            @toggle-alignment="toggleAlignment($event, () => reloadGraph({ ingest: false }))"
+            @clear-alignments="clearAlignments(() => reloadGraph({ ingest: false }))"
             @toggle-guides="showMilestoneGuides = !showMilestoneGuides"
             @update:graphBaseSort="onBaseSortChange"
             @toggle-sort-dir="onToggleSortDir"
@@ -758,13 +758,20 @@ async function openGraph(spaceId) {
   startWatcher(spaceId);
 }
 
-async function reloadGraph() {
+// `ingest: false` for callers that already know no new save can be waiting: a
+// pure view change (sort, filter, alignment), or a reload triggered by work we
+// just did ourselves. Scanning and hashing every save file across the watched
+// dirs is the slowest thing here, and it is pure latency when there is nothing
+// to find — the watcher's own commit notification is exactly that case.
+async function reloadGraph({ ingest = true } = {}) {
   if (!selectedSpaceId.value || !selectedSlot.value) return;
   graphLoading.value = true;
   try {
-    try {
-      await fetch(`/api/spaces/${selectedSpaceId.value}/ingest`, { method: 'POST' });
-    } catch (e) {}
+    if (ingest) {
+      try {
+        await fetch(`/api/spaces/${selectedSpaceId.value}/ingest`, { method: 'POST' });
+      } catch (e) {}
+    }
     await loadSlots();
     const [bundle, tags] = await Promise.all([
       fetchGraphBundle(selectedSpaceId.value, selectedSlot.value, graphBaseSort.value, graphBaseDir.value, currentSpace.value, appliedFilterExpr.value, graphOrderByExpr.value),
@@ -780,16 +787,16 @@ async function reloadGraph() {
 
 function onBaseSortChange(value) {
   graphBaseSort.value = value;
-  reloadGraph();
+  reloadGraph({ ingest: false });
 }
 
 function onToggleSortDir() {
   graphBaseDir.value = graphBaseDir.value === 'asc' ? 'desc' : 'asc';
-  reloadGraph();
+  reloadGraph({ ingest: false });
 }
 
 async function applySort() {
-  await reloadGraph();
+  await reloadGraph({ ingest: false });
   const expr = graphOrderByExpr.value.trim();
   if (!expr) return;
   const space = currentSpace.value;
@@ -903,11 +910,11 @@ async function selectAndCenterNode(sha) {
 }
 
 function onAddNodeTag(sha, tag) {
-  addNodeTag(selectedSpaceId.value, selectedSlot.value, sha, tag, reloadGraph);
+  addNodeTag(selectedSpaceId.value, selectedSlot.value, sha, tag, () => reloadGraph({ ingest: false }));
 }
 
 function onRemoveNodeTag(sha, tag) {
-  removeNodeTag(selectedSpaceId.value, selectedSlot.value, sha, tag, reloadGraph);
+  removeNodeTag(selectedSpaceId.value, selectedSlot.value, sha, tag, () => reloadGraph({ ingest: false }));
 }
 
 function removeAdditionalSavesDir(idx) {
@@ -955,7 +962,7 @@ async function ingest() {
   try {
     const res = await fetch(`/api/spaces/${selectedSpaceId.value}/ingest`, { method: 'POST' }).then(r => r.json());
     await loadSlots();
-    await reloadGraph();
+    await reloadGraph({ ingest: false });
     if (!res.count) {
       showToast('No new save detected in watched folders.');
     } else {
@@ -1080,7 +1087,7 @@ async function confirmDeleteNode(strategy) {
     deleteNodeModalOpen.value = false;
     selectedNodeSha.value = '';
     selectedNode.value = null;
-    await reloadGraph();
+    await reloadGraph({ ingest: false });
   } catch (err) {
     showToast(`Error: ${err.message}`);
   } finally {
@@ -1159,7 +1166,7 @@ function startWatcher(spaceId) {
     } else if (data.committed) {
       if (data.slot === selectedSlot.value) {
         showToast(`Auto-committed ${data.short}`);
-        await reloadGraph();
+        await reloadGraph({ ingest: false });
         if (autoSelectOnAdd.value && data.sha) {
           await selectAndCenterNode(data.sha);
         }
