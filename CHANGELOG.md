@@ -58,6 +58,7 @@ All notable changes to this project are documented in this file.
 ### Performance
 
 - Stop redrawing the whole graph, and store save dirs locally (ba6b1c0)
+- Cut the save-to-graph latency in half (e2dea17)
 
 ### Refactor
 
