@@ -15,6 +15,7 @@ All notable changes to this project are documented in this file.
 - Adopt a clone's root instead of minting a second one (b07a701)
 - Stop racing for the git config lock on every open (58255c6)
 - Milestone columns, restore/ingest race, view prefs, loading state (6f38ffb)
+- Keep each save point's variables through a reparent delete (6ddd168)
 
 ### Documentation
 
