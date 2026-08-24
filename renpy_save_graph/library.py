@@ -135,8 +135,31 @@ class Library:
                 # Losing that race must not fail the request -- reading the
                 # config takes no lock, so the next opener sets it.
                 pass
+        lib._mark_snapshots_unmergeable()
         lib._init_root()
         return lib
+
+    def _mark_snapshots_unmergeable(self) -> None:
+        """Tell git a save point's files are snapshots, never to be merged.
+
+        Reparenting a node rebases its descendants, and rebase replays a commit
+        as a patch three-way merged onto the new base -- which would splice the
+        base's values into state.json wherever the commit did not change them.
+        Unmergeable files fall to `-X theirs`, taking each commit's own whole.
+
+        Kept in .git/info/attributes: the working tree here *is* the save point,
+        so a tracked .gitattributes would sit untracked beside the two files we
+        commit. Written on every open, so existing and cloned libraries get it.
+        """
+        attributes = self.path / ".git" / "info" / "attributes"
+        wanted = f"{BLOB} -merge\n{STATE} -merge\n"
+        try:
+            if attributes.exists() and attributes.read_text(encoding="utf-8") == wanted:
+                return
+            attributes.parent.mkdir(parents=True, exist_ok=True)
+            attributes.write_text(wanted, encoding="utf-8")
+        except OSError:
+            pass  # read-only or missing .git; save.save is unmergeable anyway
 
     def _init_root(self) -> None:
         """Ensure the shared root commit exists and .gitignore ignores graph.sqlite."""

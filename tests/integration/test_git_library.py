@@ -1,5 +1,6 @@
 """Integration tests for Library Git DAG operations."""
 
+import json
 import subprocess
 
 import pytest
@@ -207,3 +208,45 @@ def test_manifest_round_trips_without_touching_the_slot(tmp_workspace):
     assert lib.head().sha == head_before
     assert (tmp_workspace["lib_dir"] / "save.save").read_bytes() == blob_before
     assert len(lib.dag()) == nodes_before
+
+
+@pytest.mark.integration
+def test_reparent_delete_keeps_each_save_point_intact(tmp_workspace):
+    """A descendant must keep its own variables, not inherit the new parent's.
+
+    Rebase replays a commit as a patch three-way merged onto the new base, so a
+    variable the commit did not change gets spliced in from the base -- leaving
+    a save point that mixes two different saves. Only the values that happened
+    to sit near a changed line survive, which is why this is easy to miss.
+    """
+    space = tmp_workspace["space"]
+    slot_file = tmp_workspace["slot_file"]
+    director = Director(space)
+
+    def ingest(vars_dict, label):
+        slot_file.write_bytes(create_mock_save_zip(vars_dict, label))
+        return director.ingest("1-1-LT1", note=label).commit.sha
+
+    # `chapter` does not change between the deleted node and its child, so it
+    # is absent from the diff between them and gets taken from the new parent.
+    # state.json is written key-sorted, so the flag_* variables land between
+    # `chapter` and `money` and keep the one that does change out of diff
+    # context of the one that does not. A save small enough to fit in a single
+    # hunk conflicts on every line, and `-X theirs` resolves it right by luck.
+    others = {f"flag_{i:02d}": i for i in range(15)}
+    ingest({**others, "chapter": 9, "money": 100}, "ch9")
+    doomed = ingest({**others, "chapter": 10, "money": 200}, "ch10")
+    child = ingest({**others, "chapter": 10, "money": 300}, "ch10 later")
+
+    before = json.loads(director.library._git("show", f"{child}:state.json", capture=True))
+
+    removed = director.delete_node("1-1-LT1", doomed, strategy="reparent")
+    assert doomed in removed
+
+    tip = director.library.head().sha
+    after = json.loads(director.library._git("show", f"{tip}:state.json", capture=True))
+
+    assert after["variables"]["chapter"] == 10, (
+        f"child inherited the new parent's chapter: {after['variables']}"
+    )
+    assert after == before, "the reparented save point is not the one that was saved"
