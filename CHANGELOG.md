@@ -16,6 +16,7 @@ All notable changes to this project are documented in this file.
 - Stop racing for the git config lock on every open (58255c6)
 - Milestone columns, restore/ingest race, view prefs, loading state (6f38ffb)
 - Keep each save point's variables through a reparent delete (6ddd168)
+- Name Git as the missing dependency instead of the save folder (a627d99)
 
 ### Documentation
 
