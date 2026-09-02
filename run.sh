@@ -18,6 +18,12 @@ if ! command -v npm &> /dev/null; then
     exit 1
 fi
 
+if ! command -v git &> /dev/null; then
+    echo "[ERROR] Git is not installed or not in PATH!"
+    echo "Please install Git from https://git-scm.com/downloads or via your package manager."
+    exit 1
+fi
+
 echo "Installing / Updating renpy-save-graph..."
 python3 -m pip install --quiet --upgrade .
 

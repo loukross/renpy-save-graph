@@ -810,6 +810,16 @@ def serve(
 
 
 def _main(argv: list[str]) -> int:
+    # Without this the first git call dies inside subprocess with the OS's own
+    # "cannot find the file specified", which reads like the *save folder* is
+    # missing and sends people hunting through their game directory.
+    if shutil.which("git") is None:
+        print(
+            "Git was not found on PATH.  Install it from https://git-scm.com/downloads "
+            "and open a new terminal, then run this again.",
+            file=sys.stderr,
+        )
+        return 1
     config_path = Path(argv[0]) if argv else None
     port = int(argv[1]) if len(argv) > 1 else 5555
     try:

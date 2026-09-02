@@ -24,6 +24,15 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+where git >nul 2>nul
+if %errorlevel% neq 0 (
+    echo [ERROR] Git is not installed or not in PATH!
+    echo Please install Git from https://git-scm.com/downloads
+    echo.
+    pause
+    exit /b 1
+)
+
 echo Installing / Updating renpy-save-graph...
 py -m pip install --quiet --upgrade .
 
