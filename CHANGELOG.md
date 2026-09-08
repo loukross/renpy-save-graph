@@ -36,6 +36,7 @@ All notable changes to this project are documented in this file.
 - Make a library carry its own tags and settings (d2d8b24)
 - Import a cloned library (a4a8664)
 - Change an additional saves directory in place (40008d6)
+- Mark a save point's variables as manipulated (cf9426b)
 
 ### Miscellaneous
 
