@@ -648,6 +648,57 @@ function renderGraph() {
         .attr('fill', '#c8a020');
     }
 
+    // Upper right, mirroring the tag pills on the left edge. Drawn after
+    // decorateNode so it sits on top of the thumbnail.
+    const manipulated = n.manipulated || [];
+    if (manipulated.length) {
+      // pillOverhang mirrors the 10px the tag pills hang off the left edge; the
+      // glyph and the pills both right-align to it so they share one edge.
+      const badgeSize = 30, pillOverhang = 10;
+      const rightEdgeX = nodeW / 2 + pillOverhang;
+      const badgeG = d3.select(el).append('g').attr('class', 'manipulated-badge');
+      badgeG.append('title').text(`Manipulated in console/editor: ${manipulated.join(', ')}`);
+      // Bare glyph, so a drop shadow does the work a plate would: the thumbnail
+      // underneath can be any colour.  y is a baseline, so the glyph is dropped
+      // by its own ascent to put its top on the tag pills' top edge (the same
+      // -nodeH/2 + 23 their foreignObject uses); 0.85 is roughly how much of
+      // the em an emoji fills -- nudge it if the tops drift apart.  It stays
+      // text-anchor:middle because an emoji's ink sits inside a wider advance
+      // box, so anchoring by the end lands it short of the pills; badgeInset is
+      // half that ink, pulling the centre in so the right edges meet.  Raise it
+      // to push the glyph left, lower it to push it right.
+      const badgeTopY = -nodeH / 2 + 23, badgeInset = 13;
+      badgeG.append('text')
+        .attr('x', rightEdgeX - badgeInset).attr('y', badgeTopY + badgeSize * 0.85)
+        .attr('text-anchor', 'middle').attr('font-size', badgeSize)
+        .style('paint-order', 'stroke')
+        .style('filter', 'drop-shadow(0 1px 2px rgba(0,0,0,0.9))')
+        .text('🥷');
+
+      // The altered names, stacked under the glyph and right-justified to the
+      // same anchor, so the column grows leftward instead of off the node.
+      // Same pill shape as the tags on the left edge, in the graph's own
+      // background colour on yellow so the two don't read as one vocabulary.
+      const pillRowH = 24, pillFoW = 240;
+      const pillFo = badgeG.append('foreignObject')
+        .attr('x', rightEdgeX - pillFoW)
+        .attr('y', badgeTopY + badgeSize + 2)
+        .attr('width', pillFoW).attr('height', manipulated.length * pillRowH + 8)
+        .style('overflow', 'visible');
+      const pillCol = pillFo.append('xhtml:div')
+        .style('display', 'flex').style('flex-direction', 'column')
+        .style('align-items', 'flex-end').style('gap', '4px');
+      manipulated.forEach(varName => {
+        pillCol.append('xhtml:div')
+          .style('background', '#ffcc00').style('color', 'var(--bg)')
+          .style('font-size', '11px').style('font-weight', '600').style('padding', '2px 8px')
+          .style('border-radius', '10px').style('box-shadow', '0 2px 8px rgba(0,0,0,0.5)')
+          .style('display', 'inline-flex').style('align-items', 'center')
+          .style('white-space', 'nowrap')
+          .text(varName);
+      });
+    }
+
     if (isSuspect) {
       const invalidStrokeW = 5, pad = invalidStrokeW / 2;
       d3.select(el).append('rect')

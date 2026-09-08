@@ -10,7 +10,7 @@
           Remove <strong style="color:var(--text)">{{ space?.label || space?.id }}</strong>?
         </div>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text-dim)">
-          <input type="checkbox" v-model="deleteLibrary" style="width:auto" />
+          <input type="checkbox" v-model="deleteLibrary" />
           Permanently delete the git library
         </label>
       </div>

@@ -150,6 +150,7 @@
           @restore="doRestore"
           @delete="openDeleteModal"
           @change-save-dir="openChangeSaveDirModal"
+          @toggle-manipulated="toggleManipulated"
         />
       </div>
 
@@ -949,6 +950,35 @@ async function toggleFavorite(varName) {
   });
 }
 
+async function toggleManipulated(varName, on) {
+  const sha = selectedNode.value && selectedNode.value.sha;
+  if (!sha || !selectedSpaceId.value || !selectedSlot.value) return;
+  try {
+    const res = await fetch(
+      `/api/spaces/${selectedSpaceId.value}/slots/${selectedSlot.value}/nodes/${sha}/manipulated`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ var: varName, on }),
+      },
+    ).then(r => r.json());
+    // Patch both views off the server's list rather than reloading the graph —
+    // the checkbox and the node badge read from different places.  graphData is
+    // replaced wholesale, not mutated: GraphCanvas watches it by reference, so
+    // an in-place edit would leave the badge undrawn until the next reload.
+    diffData.value = { ...diffData.value, manipulated: res.manipulated };
+    graphData.value = {
+      ...graphData.value,
+      nodes: graphData.value.nodes.map(
+        n => (n.sha === sha ? { ...n, manipulated: res.manipulated } : n)
+      ),
+    };
+    if (selectedNode.value) selectedNode.value = { ...selectedNode.value, manipulated: res.manipulated };
+  } catch (e) {
+    console.error('Error marking manipulated variable:', e);
+  }
+}
+
 function addToFilter(varName, value) {
   const val = typeof value === 'string' ? `'${value}'` : value;
   const snippet = `${varName} == ${val}`;
@@ -1522,19 +1552,42 @@ async function startInteractiveTour(force = false) {
       },
       {
         element: '#diff-pane',
+        onHighlightStarted: async () => {
+          if (graphData.value && graphData.value.nodes) {
+            const nodeC = graphData.value.nodes.find(n => n.subject && (n.subject.includes('mountain') || n.subject.includes('castle')));
+            if (nodeC) {
+              await onSelectNode(nodeC.sha);
+            }
+          }
+        },
         popover: {
           title: 'Diff View',
           description: 'Selecting a node shows its choice differences side-by-side compared to its parent node.',
           side: 'left',
           align: 'center',
-          onHighlightStarted: async () => {
-            if (graphData.value && graphData.value.nodes) {
-              const nodeC = graphData.value.nodes.find(n => n.subject && (n.subject.includes('mountain') || n.subject.includes('castle')));
-              if (nodeC) {
-                await onSelectNode(nodeC.sha);
-              }
-            }
-          },
+        },
+      },
+      {
+        element: '.manip-col-head',
+        // Mark one for real so the step shows the badge and pill rather than
+        // describing them.  The example space is reset when the tour starts,
+        // so this leaves nothing behind for the next run.  gold is the pick:
+        // it reads as something a player would actually cheat, and it survives
+        // the default ^[^_] filter that hides the engine's own _-prefixed vars.
+        onHighlightStarted: async () => {
+          const changes = (diffData.value && diffData.value.changes) || [];
+          const already = (diffData.value && diffData.value.manipulated) || [];
+          const visible = changes.filter(
+            c => !c.removed && !c.var.startsWith('_') && !already.includes(c.var)
+          );
+          const demo = visible.find(c => c.var === 'gold') || visible[0];
+          if (demo) await toggleManipulated(demo.var, true);
+        },
+        popover: {
+          title: 'Manipulated Variables 🥷',
+          description: 'Changed a value by hand — through the in-game console or a save editor? Tick it here and that save point is flagged as not-quite-played: a 🥷 appears on its node card with a pill naming each altered variable.',
+          side: 'left',
+          align: 'start',
           onNextClick: () => {
             bottomPanelOpen.value = true;
             driverObj.moveNext();
@@ -1561,19 +1614,19 @@ async function startInteractiveTour(force = false) {
       },
       {
         element: '.node-tag-manager',
+        onHighlightStarted: async () => {
+          if (graphData.value && graphData.value.nodes) {
+            const nodeB = graphData.value.nodes.find(n => n.subject && (n.subject.includes('forest') || n.subject.includes('Misty')));
+            if (nodeB && graphCanvasRef.value) {
+              graphCanvasRef.value.centerGraphOnNode(nodeB.sha);
+            }
+          }
+        },
         popover: {
           title: 'Custom Node Tags 🏷️',
           description: 'Click <b>+tag</b> on any node card to attach custom labels (e.g. <code>boss-fight</code> or <code>ending-a</code>). You can then align your flowchart horizontally by tag using the 📐 Horizontal Alignment popover!',
           side: 'right',
           align: 'start',
-          onHighlightStarted: async () => {
-            if (graphData.value && graphData.value.nodes) {
-              const nodeB = graphData.value.nodes.find(n => n.subject && (n.subject.includes('forest') || n.subject.includes('Misty')));
-              if (nodeB && graphCanvasRef.value) {
-                graphCanvasRef.value.centerGraphOnNode(nodeB.sha);
-              }
-            }
-          },
           onNextClick: async () => {
             if (graphData.value && graphData.value.nodes) {
               const nodeA = graphData.value.nodes.find(n => n.parents && n.parents.length === 0);
@@ -1587,19 +1640,19 @@ async function startInteractiveTour(force = false) {
       },
       {
         element: '#restore-bar',
+        onHighlightStarted: async () => {
+          if (graphData.value && graphData.value.nodes) {
+            const nodeA = graphData.value.nodes.find(n => n.parents && n.parents.length === 0);
+            if (nodeA) {
+              await onSelectNode(nodeA.sha);
+            }
+          }
+        },
         popover: {
           title: 'Restore to Game',
           description: 'Click "Restore to Game" on any node (other than the current) to copy that save point back into your single slot. Load that slot in-game to branch off and make different choices.',
           side: 'top',
           align: 'center',
-          onHighlightStarted: async () => {
-            if (graphData.value && graphData.value.nodes) {
-              const nodeA = graphData.value.nodes.find(n => n.parents && n.parents.length === 0);
-              if (nodeA) {
-                await onSelectNode(nodeA.sha);
-              }
-            }
-          },
         },
       },
       {

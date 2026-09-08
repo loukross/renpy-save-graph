@@ -129,6 +129,27 @@ input[type="checkbox"], input[type="radio"] {
   padding: 0;
   accent-color: var(--accent);
 }
+/* Every checkbox in the app: a light outline over a ground a step brighter
+   than the panels behind it.  appearance:none is what lets the box be styled
+   at all, and it also makes the box an atomic inline whose baseline is its
+   bottom edge -- which is what the diff column's alignment relies on. */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  border: 1px solid #4d5878;
+  border-radius: 3px;
+  background: #1c1c34;
+  cursor: pointer;
+}
+input[type="checkbox"]:hover:not(:disabled) { border-color: #7d8bb5; }
+input[type="checkbox"]:checked {
+  border-color: var(--purple);
+  background: #1c1c34 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2 4.8 8.5 9.5 3.8' fill='none' stroke='%23c592ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/10px 10px no-repeat;
+}
+input[type="checkbox"]:focus-visible { border-color: var(--accent2); }
 
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 input:disabled { opacity: .5; cursor: default; }
@@ -287,6 +308,19 @@ table.diff-table td { padding: 2px 4px; border-bottom: 1px solid #121220; vertic
 table.diff-table td.var { color: #7080a0; }
 table.diff-table td.old { color: var(--red-val); }
 table.diff-table td.new { color: var(--green); }
+
+/* Manipulated-variable column.  The box is dropped onto the variable name's
+   baseline by hand: vertical-align can't do it across table cells, since the
+   13px box is taller than the 12px text's ascent and the two cells resolve
+   their baselines independently.  --manip-nudge is the calibration knob --
+   raise it to push the boxes down, lower it (negative is fine) to lift them.
+   Scoped to this table, leaving the inspector's copy of .diff-table alone. */
+table.diff-table.has-manip { --manip-nudge: 3px; }
+table.diff-table.has-manip td.manip {
+  text-align: center;
+  padding-top: calc(2px + var(--manip-nudge));
+}
+input.manip-box { vertical-align: top; margin: 0; }
 
 /* ---- folder picker modal ---- */
 .modal-overlay {

@@ -158,7 +158,6 @@
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);cursor:pointer">
           <input
             type="checkbox"
-            style="width:auto"
             :checked="hideOffTrack"
             @change="$emit('update:hideOffTrack', $event.target.checked)"
           />

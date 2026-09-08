@@ -535,6 +535,35 @@ class Library:
         # An empty list would linger as an empty note; None drops the key.
         self.set_meta(sha, tags=sorted(tags) or None)
 
+    # -- manipulated variables -----------------------------------------------
+
+    def manipulated_all(self) -> dict[str, list[str]]:
+        """sha → variables marked as set by hand, for every commit that has any."""
+        return {
+            sha: sorted(meta["manipulated"])
+            for sha, meta in self.meta_all().items()
+            if meta.get("manipulated")
+        }
+
+    def get_manipulated(self, sha: str) -> list[str]:
+        return sorted(self.get_meta(sha).get("manipulated", []))
+
+    def set_manipulated(self, sha: str, var_name: str, on: bool) -> list[str]:
+        """Flag or unflag one variable at `sha`; returns the resulting list.
+
+        The mark records where the value was typed in rather than played, so it
+        stays on that save point alone -- descendants inherit the value, not the
+        claim about how it got there.
+        """
+        var = var_name.strip()
+        if not var:
+            return self.get_manipulated(sha)
+        marked = set(self.get_meta(sha).get("manipulated", []))
+        marked.add(var) if on else marked.discard(var)
+        # An empty list would linger as an empty note; None drops the key.
+        self.set_meta(sha, manipulated=sorted(marked) or None)
+        return sorted(marked)
+
     def diff_state(self, sha1: str, sha2: str) -> dict[str, tuple[Any, Any]]:
         """Variables that changed between two commits (sorted by name)."""
         def load(sha: str) -> dict[str, Any]:

@@ -84,7 +84,7 @@
               </div>
             </div>
             <label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;color:var(--text);font-size:12px;cursor:pointer">
-              <input type="checkbox" v-model="form.approved" style="margin-top:2px;width:auto" />
+              <input type="checkbox" v-model="form.approved" style="margin-top:2px" />
               <span>I understand these save files will be overwritten.</span>
             </label>
           </template>

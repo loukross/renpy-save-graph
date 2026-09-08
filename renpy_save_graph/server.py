@@ -432,6 +432,7 @@ def create_app(config_path: Path) -> FastAPI:
         db = make_db(space)
         db.sync_with_git(lib, slot_name, director.slot_names())
         all_states = db.get_all_states([n.sha for n in nodes], var_names=needed_vars)
+        manipulated = lib.manipulated_all()
 
         def hint(sha: str) -> str:
             if not fmt:
@@ -526,6 +527,7 @@ def create_app(config_path: Path) -> FastAPI:
                     "is_suspect": n.subject.startswith("[SUSPECT]"),
                     "hint": hint(n.sha),
                     "note": n.note,
+                    "manipulated": manipulated.get(n.sha, []),
                 }
                 for n in nodes
             ],
@@ -564,7 +566,12 @@ def create_app(config_path: Path) -> FastAPI:
             for k in all_keys if v1.get(k) != v2.get(k)
         ]
         save_dir = director.node_save_dir(slot_name, sha2)
-        return {"changes": changes, "save_dir": save_dir}
+        # Marks belong to sha2 -- the save point where the value was typed in.
+        return {
+            "changes": changes,
+            "save_dir": save_dir,
+            "manipulated": director.library.get_manipulated(sha2),
+        }
 
     @app.get("/api/spaces/{space_id}/slots/{slot_name}/state/{sha}")
     def api_state(space_id: str, slot_name: str, sha: str) -> dict[str, Any]:
@@ -721,6 +728,13 @@ def create_app(config_path: Path) -> FastAPI:
         lib = make_library(get_space_or_404(space_id))
         lib.remove_tag(sha, tag)
         return {"ok": True}
+
+    @app.put("/api/spaces/{space_id}/slots/{slot_name}/nodes/{sha}/manipulated")
+    def api_set_node_manipulated(space_id: str, slot_name: str, sha: str,
+                                 body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        lib = make_library(get_space_or_404(space_id))
+        marked = lib.set_manipulated(sha, body.get("var", ""), bool(body.get("on")))
+        return {"ok": True, "manipulated": marked}
 
     @app.post("/api/examples/reset")
     def api_reset_example_space() -> dict[str, bool]:

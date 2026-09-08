@@ -149,6 +149,34 @@ def test_tags_survive_reparent_delete(tmp_workspace):
 
 
 @pytest.mark.integration
+def test_manipulated_marks_stay_on_their_own_node(tmp_workspace):
+    """The mark records where a value was typed in, so it must not leak onto
+    the descendant that merely inherits that value."""
+    space = tmp_workspace["space"]
+    slot_file = tmp_workspace["slot_file"]
+    director = Director(space)
+    lib = director.library
+
+    slot_file.write_bytes(create_mock_save_zip({"money": 200}, "chapter_1"))
+    parent = director.ingest("1-1-LT1").commit.sha
+    slot_file.write_bytes(create_mock_save_zip({"money": 9999}, "chapter_2"))
+    cheated = director.ingest("1-1-LT1").commit.sha
+
+    assert lib.set_manipulated(cheated, "money", True) == ["money"]
+    assert lib.manipulated_all() == {cheated: ["money"]}
+    assert lib.get_manipulated(parent) == []
+
+    # A second variable on the same node accumulates rather than replacing.
+    assert lib.set_manipulated(cheated, "karma", True) == ["karma", "money"]
+
+    assert lib.set_manipulated(cheated, "karma", False) == ["money"]
+    lib.set_manipulated(cheated, "money", False)
+    # Emptied out, the key is dropped rather than left as an empty list.
+    assert cheated not in lib.manipulated_all()
+    assert lib.get_meta(cheated).get("manipulated") is None
+
+
+@pytest.mark.integration
 def test_opening_a_library_survives_a_locked_config(tmp_workspace):
     """Every request opens the library and the watch poll opens it on a timer,
     so two can reach for .git/config.lock at once. Losing must not raise."""

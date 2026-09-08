@@ -32,6 +32,49 @@ def test_api_diff_flags_removed_vars_apart_from_null_ones(tmp_workspace, test_cl
 
 
 @pytest.mark.api
+def test_api_marks_a_manipulated_var_for_the_diff_column_and_node_badge(
+    tmp_workspace, test_client: TestClient
+):
+    """The checkbox reads the diff payload and the badge reads the graph payload,
+    so one mark has to surface in both."""
+    space_id, slot = "test-space-id", "1-1-LT1"
+    tmp_workspace["slot_file"].write_bytes(create_mock_save_zip({"money": 9999}, "ch2"))
+    assert test_client.post(f"/api/spaces/{space_id}/slots/{slot}/ingest").json()["committed"]
+
+    nodes = test_client.get(f"/api/spaces/{space_id}/slots/{slot}/graph").json()["nodes"]
+    child = next(n for n in nodes if n["parents"])
+    assert child["manipulated"] == []
+
+    resp = test_client.put(
+        f"/api/spaces/{space_id}/slots/{slot}/nodes/{child['sha']}/manipulated",
+        json={"var": "money", "on": True},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["manipulated"] == ["money"]
+
+    diff = test_client.get(
+        f"/api/spaces/{space_id}/slots/{slot}/diff/{child['parents'][0]}/{child['sha']}"
+    ).json()
+    assert diff["manipulated"] == ["money"]
+
+    nodes = test_client.get(f"/api/spaces/{space_id}/slots/{slot}/graph").json()["nodes"]
+    marked = next(n for n in nodes if n["sha"] == child["sha"])
+    assert marked["manipulated"] == ["money"]
+    # The parent it was diffed against stays clean.
+    parent = next(n for n in nodes if n["sha"] == child["parents"][0])
+    assert parent["manipulated"] == []
+
+    test_client.put(
+        f"/api/spaces/{space_id}/slots/{slot}/nodes/{child['sha']}/manipulated",
+        json={"var": "money", "on": False},
+    )
+    diff = test_client.get(
+        f"/api/spaces/{space_id}/slots/{slot}/diff/{child['parents'][0]}/{child['sha']}"
+    ).json()
+    assert diff["manipulated"] == []
+
+
+@pytest.mark.api
 def test_api_graph_endpoint(test_client: TestClient):
     space_id = "test-space-id"
     slot = "1-1-LT1"

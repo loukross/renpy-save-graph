@@ -53,9 +53,12 @@
       <div v-else-if="!node.parents || !node.parents.length" class="diff-empty">Root commit — no parent to diff against.</div>
       <div v-else-if="!diffData" class="diff-empty">—</div>
       <div v-else-if="!filteredChanges.length" class="diff-empty">No variable changes{{ filterActive ? ' (filter active)' : '' }}.</div>
-      <table v-else class="diff-table">
+      <table v-else class="diff-table has-manip">
         <thead>
           <tr>
+            <th class="manip-col-head" style="width:24px;text-align:center">
+              <span role="img" aria-label="Manipulated in console/editor" title="Manipulated in console/editor">🥷</span>
+            </th>
             <th style="white-space:nowrap;width:1%">Variable</th>
             <th>Before</th>
             <th>After</th>
@@ -63,6 +66,15 @@
         </thead>
         <tbody>
           <tr v-for="c in filteredChanges" :key="c.var">
+            <td class="manip">
+              <input
+                type="checkbox"
+                class="manip-box"
+                title="Manipulated in console/editor"
+                :checked="isManipulated(c.var)"
+                @change="$emit('toggle-manipulated', c.var, $event.target.checked)"
+              />
+            </td>
             <td class="var" style="white-space:nowrap">{{ c.var }}</td>
             <td class="old">{{ fmtVal(c.old) }}</td>
             <td class="new">{{ fmtVal(c.new) }}</td>
@@ -111,7 +123,12 @@ const props = defineProps({
   hasMultipleSavesDirs: Boolean,
 });
 
-defineEmits(['restore', 'delete', 'change-save-dir']);
+defineEmits(['restore', 'delete', 'change-save-dir', 'toggle-manipulated']);
+
+function isManipulated(varName) {
+  const marked = (props.diffData && props.diffData.manipulated) || [];
+  return marked.includes(varName);
+}
 
 const varFilter = ref('^[^_]');
 const hideRemoved = ref(true);
