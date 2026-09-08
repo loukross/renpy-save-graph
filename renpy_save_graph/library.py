@@ -98,15 +98,15 @@ class Library:
         result = subprocess.run(
             ["git", *args],
             cwd=str(self.path),
-            text=True,
-            input=stdin,
+            input=stdin.encode("utf-8") if stdin is not None else None,
             stdout=subprocess.PIPE if capture else None,
             stderr=subprocess.PIPE,
             check=False,
         )
         if result.returncode != 0:
-            raise GitError(f"git {' '.join(args)} failed:\n{result.stderr.strip()}")
-        return (result.stdout or "").strip()
+            stderr = (result.stderr or b"").decode("utf-8", "replace")
+            raise GitError(f"git {' '.join(args)} failed:\n{stderr.strip()}")
+        return (result.stdout or b"").decode("utf-8", "replace").strip()
 
     # -- lifecycle -----------------------------------------------------------
     @classmethod
