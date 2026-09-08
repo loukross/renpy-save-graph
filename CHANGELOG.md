@@ -17,6 +17,7 @@ All notable changes to this project are documented in this file.
 - Milestone columns, restore/ingest race, view prefs, loading state (6f38ffb)
 - Keep each save point's variables through a reparent delete (6ddd168)
 - Name Git as the missing dependency instead of the save folder (a627d99)
+- Keep git stdin out of text mode so Windows can read the manifest (4f8c702)
 
 ### Documentation
 
